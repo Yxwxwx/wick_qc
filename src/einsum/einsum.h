@@ -38,6 +38,8 @@ struct LoweringOptions {
   bool materialize_scalar_broadcast = false;
   // A graph can broadcast different orbital spaces at the same tensor rank.
   bool domain_identity_names = false;
+  // Numerical consumers use integer IDs and need no NumPy label alphabet.
+  bool numeric_indices_only = false;
 };
 
 struct NumpyOptions {

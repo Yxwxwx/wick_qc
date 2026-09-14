@@ -3,8 +3,8 @@
 `wick_qc` is a C++20 symbolic Wick engine and tensor-equation compiler for
 quantum-chemistry methods. The current implementation covers fermionic and
 spin-free normal ordering, contractions, symmetry-aware simplification,
-Tensor Equation IR, Einsum IR, contraction-graph optimization, and NumPy
-rendering with einsum, tensordot and elementwise operations.
+Tensor Equation IR, Einsum IR, contraction-graph optimization, NumPy rendering,
+and C++ numerical execution through NDArray and selectable GEMM backends.
 
 The independent implementation is built as `wickqc_symbolic` from
 `src/symbolic`, `src/equation`, `src/einsum`, and `src/method`. The supplied
@@ -24,6 +24,117 @@ It builds the library, CLI, and standalone method examples without GoogleTest,
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 4
+```
+
+`BLAS_BACKEND` selects `NATIVE` (default), `SIMPLE`, `MKL`, `OPENBLAS`, or
+`BLIS`. NATIVE and SIMPLE need no external BLAS installation. The numerical
+library is `wickqc_runtime`; generic NDArray users can link only the
+`wickqc_ndarray` interface target. `wickqc_symbolic` has no BLAS dependency.
+
+```bash
+cmake -S . -B build/openblas -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBLAS_BACKEND=OPENBLAS -DOPENBLAS_ROOT=/path/to/openblas
+cmake -S . -B build/blis -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBLAS_BACKEND=BLIS -DBLIS_ROOT=/path/to/blis
+module load mkl-2024.2.1
+cmake -S . -B build/mkl -G Ninja -DCMAKE_BUILD_TYPE=Release -DBLAS_BACKEND=MKL
+```
+
+BLIS requires its CBLAS interface. MKL is discovered through its CMake package
+or `MKLROOT` and defaults to sequential GEMM; `MKL_THREADING` can select a
+threading layer compatible with the application. OpenMP is linked explicitly
+for NDArray reductions. Control BLAS/OpenMP thread counts in the calling job.
+
+## Execute Wick equations with NDArray
+
+The NDArray and GEMM implementations supplied in `tmp_backend` now live in
+`src/backend/ndarray.hpp` and `src/backend/blas.hpp`, in namespace `wickqc`.
+The original directory is not a build dependency. They remain template headers;
+the new adapter uses `.h` declarations and a `.cpp` implementation.
+
+The execution path is:
+
+```text
+method.Equations() → optional graph.Simplify() → NdArrayExecutor::Compile()
+                  → Evaluate(tensors, dimensions) → NDArray einsum → GEMM
+```
+
+```cpp
+#include "method/spatial_cc.h"
+#include "runtime/ndarray_executor.h"
+
+using namespace wickqc;
+const runtime::Dimensions dimensions{
+    {{1, 0}, nocc}, {{2, 0}, nact}, {{8, 0}, nvir}};
+const auto graph = method::SpatialCcGenerator(2).Equations().Simplify();
+const auto executor = runtime::NdArrayExecutor::Compile(graph);
+runtime::TensorMap<double> tensors;
+for (const auto& binding : executor.Inputs()) {
+  // Load the integral/amplitude/RDM block named binding.name into an NDArray
+  // with shape binding.Shape(dimensions), respecting its declared symmetry.
+  tensors.emplace(binding.name, load_tensor(binding.name, binding.Shape(dimensions)));
+}
+const auto result = executor.Evaluate(tensors, dimensions);
+// result contains energy, residual1, residual2. Reuse executor for new amplitudes.
+```
+
+The domain keys are `{orbital_mask, spin_mask}`; orbital masks `1`, `2`, `4`,
+`8` mean inactive, active, single, external. Spin masks `0`, `1`, `2` mean
+spin-free, alpha, beta. Supply each used domain's extent explicitly. Tensor
+names and axis order match the existing NumPy emitter, e.g. `vIIEE`, `u1EEII`,
+`E1`. The executor validates names/shapes, constructs Kronecker deltas and
+broadcast ones, applies coefficients and output permutations, schedules graph
+dependencies, and releases intermediates after their last use. Results start
+at zero and own their storage; input views are never modified. Graph assignment
+names must be unique. `double` and `std::complex<double>` are supported by all
+five backends; einsum multiplication does not implicitly conjugate operands.
+
+MP2--MP4 and CCSD/T/Q use the same adapter. SC-/IC-NEVPT2 return named graphs;
+compile/evaluate each entry of `ScNevpt2Generator().Equations()` or
+`IcNevpt2Generator().Equations()`. These evaluate the SC norms/Hamiltonian
+expectations and the IC Hamiltonian/RHS blocks. Orbital restrictions, NEVPT2
+energy assembly/linear solves, and iterative MP/CC amplitude solvers remain at
+the method/application layer; this adapter executes the tensor equations.
+
+Graph compilation and optimization are explicit setup operations. During
+evaluation, NDArray consumes integer index lists and prepares contractions and
+packing using the supplied shapes. This is a reusable runtime executor, not
+yet the project's planned constexpr contraction/workspace compiler.
+
+A complete MP2 model supplies integrals and denominator-divided amplitudes,
+evaluates the optimized Wick graph, and checks its energy/residuals:
+
+```bash
+./build/evaluate_mp2
+# E2 = -0.0744044593545318; residual norms approximately 0 and 1e-16
+```
+
+Generic einsum is also available without the symbolic engine:
+
+```cpp
+auto c = wickqc::NDArray<double>::Einsum("ik,jk->ij", {a, b});
+auto d = wickqc::NDArray<double>::Einsum({{0, 1}, {2, 1}}, {0, 2}, {a, b});
+```
+
+## Optional numerical validation
+
+The Git-ignored `tests/numerical` suite is independent of `docs/wick.hpp` and
+does not enable the large block2 regression suite. It checks scalar-loop GEMM
+references, real/complex tensors, views, diagonals, reductions, broadcasts,
+permutations, empty spaces, invalid inputs, and method results against the
+original NumPy equations. Tests use two orbital shapes and tensors satisfying
+the declared symmetries.
+
+```bash
+module load googletest/1.15.0
+cmake -S . -B build/numerical -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DWICKQC_BUILD_NUMERICAL_TESTS=ON -DBLAS_BACKEND=NATIVE
+cmake --build build/numerical -j 4
+ctest --test-dir build/numerical --output-on-failure
+# Longer high-rank CC validation (default CTest covers CCSD):
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 tests/numerical/check_methods.py \
+  "$PWD/build/numerical/tests/numerical/check_ndarray_methods" \
+  "$PWD/build/numerical/cc_through_quadruples" 4
 ```
 
 ## Standalone method examples

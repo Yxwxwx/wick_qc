@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
+include(cmake/BlasBackend.cmake)
 
 add_library(wickqc_symbolic src/symbolic/wick.cpp src/symbolic/serialization.cpp
                             src/equation/equation.cpp src/equation/graph.cpp
@@ -18,6 +19,12 @@ add_library(wickqc_symbolic src/symbolic/wick.cpp src/symbolic/serialization.cpp
                             src/method/spatial_mp.cpp)
 target_include_directories(
   wickqc_symbolic PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
+
+add_library(wickqc_runtime src/runtime/ndarray_executor.cpp)
+target_link_libraries(wickqc_runtime PUBLIC wickqc_symbolic wickqc_ndarray)
+
+add_executable(evaluate_mp2 tools/evaluate_mp2.cpp)
+target_link_libraries(evaluate_mp2 PRIVATE wickqc_runtime)
 
 add_executable(wick_qc src/main.cpp)
 target_link_libraries(wick_qc PRIVATE wickqc_symbolic)
@@ -42,6 +49,10 @@ add_executable(test_nevpt2_methods unit_test/test_spatial_nevpt2.cpp)
 target_link_libraries(test_nevpt2_methods PRIVATE wickqc_symbolic)
 
 include(CTest)
+option(WICKQC_BUILD_NUMERICAL_TESTS "Build the optional local NDArray integration tests" OFF)
+if(BUILD_TESTING AND WICKQC_BUILD_NUMERICAL_TESTS)
+  add_subdirectory(tests/numerical)
+endif()
 option(WICKQC_BUILD_REGRESSION_TESTS "Build the optional local regression suite" OFF)
 if(BUILD_TESTING AND WICKQC_BUILD_REGRESSION_TESTS)
   if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")

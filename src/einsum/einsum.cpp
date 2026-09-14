@@ -234,12 +234,29 @@ Term LowerTerm(
     const LoweringOptions& options) {
   std::map<IndexIdentity, std::string> labels;
   std::set<std::string> used_labels;
-  AssignPass(source, false, labels, used_labels);
-  AssignPass(source, true, labels, used_labels);
+  if (!options.numeric_indices_only) {
+    AssignPass(source, false, labels, used_labels);
+    AssignPass(source, true, labels, used_labels);
+  } else {
+    for (const auto& tensor : source.inputs) {
+      for (const auto& index : tensor.indices) {
+        const auto identity = Identity(index);
+        if (!labels.contains(identity)) {
+          auto label = std::to_string(labels.size());
+          used_labels.insert(label);
+          labels.emplace(identity, std::move(label));
+        }
+      }
+    }
+  }
   for (const auto& index : source.output.indices) {
     const auto identity = Identity(index);
     if (!labels.contains(identity)) {
-      labels.emplace(identity, ClaimLabel(index, used_labels));
+      auto label = options.numeric_indices_only
+          ? std::to_string(labels.size())
+          : ClaimLabel(index, used_labels);
+      used_labels.insert(label);
+      labels.emplace(identity, std::move(label));
     }
   }
 
@@ -339,6 +356,15 @@ Program Program::Lower(
 }
 
 std::string RenderNumpy(const Program& program, const NumpyOptions& options) {
+  for (const auto& term : program.Terms()) {
+    for (const auto& label : term.index_labels) {
+      if (label.size() != 1 ||
+          !std::isalpha(static_cast<unsigned char>(label.front()))) {
+        throw std::invalid_argument(
+            "NumPy rendering requires lowering with numeric_indices_only=false");
+      }
+    }
+  }
   std::ostringstream output;
   output << std::setprecision(options.coefficient_precision);
   bool initialize = options.initialize;

@@ -29,7 +29,9 @@ std::string Axes(int rank) {
 }
 } // namespace
 
-SpatialCcGenerator::SpatialCcGenerator(int excitation_rank) {
+SpatialCcGenerator::SpatialCcGenerator(
+    int excitation_rank,
+    IntegralConvention convention) {
   if (excitation_rank < 1 || excitation_rank > 4) {
     throw std::invalid_argument(
         "Spatial CC excitation rank must be between one and four");
@@ -37,7 +39,11 @@ SpatialCcGenerator::SpatialCcGenerator(int excitation_rank) {
   indices_.Add(symbolic::OrbitalSpace::kInactive, "pqrsijklmno");
   indices_.Add(symbolic::OrbitalSpace::kExternal, "pqrsabcdefg");
   symmetries_.Add(
-      "v", 4, symbolic::TensorSymmetry::QuantumChemistryPhysicists());
+      "v",
+      4,
+      convention == IntegralConvention::kChemist
+          ? symbolic::TensorSymmetry::QuantumChemistryChemists()
+          : symbolic::TensorSymmetry::QuantumChemistryPhysicists());
   double factorial = 1.0;
   for (int rank = 1; rank <= excitation_rank; ++rank) {
     factorial *= rank;
@@ -51,7 +57,7 @@ SpatialCcGenerator::SpatialCcGenerator(int excitation_rank) {
             "SUM <" + Axes(rank) + "> t[" + Axes(rank) + "]" +
             ExcitationWord(rank, false)));
   }
-  hamiltonian_ = UgaCcsdGenerator().Hamiltonian();
+  hamiltonian_ = UgaCcsdGenerator(convention).Hamiltonian();
 }
 
 symbolic::Expression SpatialCcGenerator::Parse(std::string_view text) const {

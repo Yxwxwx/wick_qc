@@ -11,7 +11,7 @@
 // the correlation energy and all residual ranks through n.
 int main(int argc, char** argv) {
   constexpr std::string_view kUsage =
-      "Usage: test_spatial_cc {2|3|4} [--optimize]\n"
+      "Usage: test_spatial_cc {2|3|4} [--optimize] [--chemist]\n"
       "Ranks: 2=CCSD, 3=CCSDT, 4=CCSDTQ.\n"
       "Write the energy and all residual NumPy equations to stdout.\n";
   if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--help")) {
@@ -19,14 +19,29 @@ int main(int argc, char** argv) {
     return 0;
   }
   const std::string_view rank = argv[1];
-  if (argc > 3 || (rank != "2" && rank != "3" && rank != "4") ||
-      (argc == 3 && std::string_view(argv[2]) != "--optimize")) {
+  if (argc > 4 || (rank != "2" && rank != "3" && rank != "4")) {
     std::cerr << kUsage;
     return 2;
   }
+  bool optimize = false, chemist = false;
+  for (int i = 2; i < argc; ++i) {
+    const std::string_view option = argv[i];
+    if (option == "--optimize" && !optimize) {
+      optimize = true;
+    } else if (option == "--chemist" && !chemist) {
+      chemist = true;
+    } else {
+      std::cerr << kUsage;
+      return 2;
+    }
+  }
   try {
-    const wickqc::method::SpatialCcGenerator method(rank.front() - '0');
-    std::cout << method.GenerateNumpy(argc == 3);
+    const auto convention = chemist
+        ? wickqc::method::IntegralConvention::kChemist
+        : wickqc::method::IntegralConvention::kPhysicist;
+    const wickqc::method::SpatialCcGenerator method(
+        rank.front() - '0', convention);
+    std::cout << method.GenerateNumpy(optimize);
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

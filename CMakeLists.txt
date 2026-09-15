@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(wick_qc VERSION 0.0.1 LANGUAGES CXX)
+project(wick_qc VERSION 0.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
-include(cmake/BlasBackend.cmake)
+include(cmake/EinsumBackend.cmake)
 
 add_library(wickqc_symbolic src/symbolic/wick.cpp src/symbolic/serialization.cpp
                             src/equation/equation.cpp src/equation/graph.cpp
@@ -25,6 +25,9 @@ target_link_libraries(wickqc_runtime PUBLIC wickqc_symbolic wickqc_ndarray)
 
 add_executable(evaluate_mp2 tools/evaluate_mp2.cpp)
 target_link_libraries(evaluate_mp2 PRIVATE wickqc_runtime)
+
+add_executable(test_h2o_pyscf unit_test/test_h2o_pyscf.cpp)
+target_link_libraries(test_h2o_pyscf PRIVATE wickqc_runtime)
 
 add_executable(wick_qc src/main.cpp)
 target_link_libraries(wick_qc PRIVATE wickqc_symbolic)

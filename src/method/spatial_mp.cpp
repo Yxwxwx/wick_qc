@@ -24,14 +24,19 @@ std::string Excitations(int rank, bool bra) {
 }
 } // namespace
 
-SpatialMpGenerator::SpatialMpGenerator(int order) : order_(order) {
+SpatialMpGenerator::SpatialMpGenerator(int order, IntegralConvention convention)
+    : order_(order) {
   if (order < 2 || order > 4) {
     throw std::invalid_argument("Spatial MP order must be two, three, or four");
   }
   indices_.Add(symbolic::OrbitalSpace::kInactive, "pqrsijklmno");
   indices_.Add(symbolic::OrbitalSpace::kExternal, "pqrsabcdefg");
   symmetries_.Add(
-      "v", 4, symbolic::TensorSymmetry::QuantumChemistryPhysicists());
+      "v",
+      4,
+      convention == IntegralConvention::kChemist
+          ? symbolic::TensorSymmetry::QuantumChemistryChemists()
+          : symbolic::TensorSymmetry::QuantumChemistryPhysicists());
   for (int rank = 1; rank <= 4; ++rank) {
     symmetries_.Add(
         "u1",
@@ -46,8 +51,9 @@ SpatialMpGenerator::SpatialMpGenerator(int order) : order_(order) {
   const auto canonical_fock = std::pair(
       symbolic::Tensor::Parse("f[pq]", indices_, symmetries_),
       Parse("delta[pq] eps[p]"));
-  const auto hamiltonian =
-      UgaCcsdGenerator().Hamiltonian().Substitute({{"f", canonical_fock}});
+  const auto hamiltonian = UgaCcsdGenerator(convention)
+                               .Hamiltonian()
+                               .Substitute({{"f", canonical_fock}});
   perturbation_ = (hamiltonian - fock_).Simplify();
 }
 

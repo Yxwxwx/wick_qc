@@ -6,12 +6,7 @@ if(NOT BLAS_BACKEND IN_LIST _wickqc_backends)
   message(FATAL_ERROR "Invalid BLAS_BACKEND='${BLAS_BACKEND}'; choose ${_wickqc_backends}")
 endif()
 
-add_library(wickqc_ndarray INTERFACE)
-target_include_directories(wickqc_ndarray INTERFACE
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
-target_compile_features(wickqc_ndarray INTERFACE cxx_std_20)
 target_compile_definitions(wickqc_ndarray INTERFACE WICKQC_USE_${BLAS_BACKEND})
-target_link_libraries(wickqc_ndarray INTERFACE OpenMP::OpenMP_CXX)
 
 if(BLAS_BACKEND STREQUAL "MKL")
   # Avoid implicitly introducing a second OpenMP runtime into an OpenMP app.

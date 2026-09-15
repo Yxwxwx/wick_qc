@@ -1,6 +1,7 @@
 #pragma once
 
 #include "equation/graph.h"
+#include "method/integral_convention.h"
 
 #include <string>
 #include <string_view>
@@ -12,7 +13,7 @@ namespace wickqc::method {
 // their overlap metric; these residuals are not denominator-divided updates.
 class SpatialMpGenerator {
  public:
-  explicit SpatialMpGenerator(int order = 4);
+  explicit SpatialMpGenerator(int order = 4, IntegralConvention convention = IntegralConvention::kPhysicist);
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;
   [[nodiscard]] equation::ContractionGraph Equations() const;
   [[nodiscard]] std::string GenerateNumpy(bool optimize = false) const;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "method/integral_convention.h"
 #include "symbolic/wick.h"
 
 #include <string>
@@ -10,7 +11,7 @@ namespace wickqc::method {
 // Closed-shell unitary-group CCSD with pair-symmetric spatial amplitudes.
 class UgaCcsdGenerator {
  public:
-  UgaCcsdGenerator();
+  explicit UgaCcsdGenerator(IntegralConvention convention = IntegralConvention::kPhysicist);
 
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;
   [[nodiscard]] const symbolic::Expression& Hamiltonian() const;

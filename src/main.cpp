@@ -15,20 +15,34 @@ int main(int argc, char** argv) {
   if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--help")) {
     std::cout << "Usage: wick_qc {ghf|ccsd|uga-ccsd|ic-nevpt2}\n"
                  "       wick_qc sc-nevpt2 [--optimize]\n"
-                 "       wick_qc spatial-mp {2|3|4} [--optimize]\n"
-                 "       wick_qc spatial-cc {2|3|4} [--optimize]\n"
+                 "       wick_qc spatial-mp {2|3|4} [--optimize] [--chemist]\n"
+                 "       wick_qc spatial-cc {2|3|4} [--optimize] [--chemist]\n"
                  "Write the method's NumPy tensor equations to stdout.\n";
     return 0;
   }
   try {
     const std::string_view method = argv[1];
     if (method == "spatial-mp" || method == "spatial-cc") {
-      if (argc < 3 || argc > 4 ||
-          (argc == 4 && std::string_view(argv[3]) != "--optimize")) {
+      if (argc < 3 || argc > 5) {
         std::cerr
-            << "Expected a method order/rank followed by optional --optimize\n";
+            << "Expected a method order/rank followed by optional --optimize and --chemist\n";
         return 2;
       }
+      bool optimize = false, chemist = false;
+      for (int i = 3; i < argc; ++i) {
+        const std::string_view option = argv[i];
+        if (option == "--optimize" && !optimize) {
+          optimize = true;
+        } else if (option == "--chemist" && !chemist) {
+          chemist = true;
+        } else {
+          std::cerr << "Unknown or repeated option: " << option << '\n';
+          return 2;
+        }
+      }
+      const auto convention = chemist
+          ? wickqc::method::IntegralConvention::kChemist
+          : wickqc::method::IntegralConvention::kPhysicist;
       const std::string_view parameter = argv[2];
       int order = 0;
       const auto converted = std::from_chars(
@@ -40,10 +54,10 @@ int main(int argc, char** argv) {
       }
       std::cout
           << (method == "spatial-mp"
-                  ? wickqc::method::SpatialMpGenerator(order).GenerateNumpy(
-                        argc == 4)
-                  : wickqc::method::SpatialCcGenerator(order).GenerateNumpy(
-                        argc == 4));
+                  ? wickqc::method::SpatialMpGenerator(order, convention)
+                        .GenerateNumpy(optimize)
+                  : wickqc::method::SpatialCcGenerator(order, convention)
+                        .GenerateNumpy(optimize));
       return 0;
     }
     if (method == "sc-nevpt2") {

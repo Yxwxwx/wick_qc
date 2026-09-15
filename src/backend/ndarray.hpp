@@ -1,6 +1,12 @@
 #pragma once
 
+#include "contraction_plan.hpp"
+
+#if defined(WICKQC_USE_TBLIS)
+#include "tblis.hpp"
+#else
 #include "blas.hpp"
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -10,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
 #include <iomanip>
 #include <limits>
@@ -745,13 +752,7 @@ class NDArray {
       const std::vector<int>& lhs_batch_axes = {},
       const std::vector<int>& rhs_batch_axes = {},
       T alpha = T{1}) {
-    NDArray result(OutputShapeForTensordot(
-        lhs,
-        rhs,
-        lhs_contract_axes,
-        rhs_contract_axes,
-        lhs_batch_axes,
-        rhs_batch_axes));
+    NDArray result;
     TensordotInto(
         lhs,
         rhs,
@@ -775,140 +776,99 @@ class NDArray {
       const std::vector<int>& rhs_batch_axes = {},
       T alpha = T{1},
       T beta = T{}) {
-    ValidateAxes(
-        lhs,
-        rhs,
+    const auto plan = backend::PlanContraction(
+        lhs.shape_,
+        rhs.shape_,
         lhs_contract_axes,
         rhs_contract_axes,
         lhs_batch_axes,
         rhs_batch_axes);
-
-    struct AxisPair {
-      int lhs;
-      int rhs;
-    };
-
-    std::vector<AxisPair> batch_pairs;
-    for (std::size_t i = 0; i < lhs_batch_axes.size(); ++i) {
-      batch_pairs.push_back({lhs_batch_axes[i], rhs_batch_axes[i]});
+    if (output.shape_ != plan.output_shape && beta != T{}) {
+      throw std::invalid_argument(
+          "cannot apply beta to a mismatched tensordot output");
     }
-    std::sort(
-        batch_pairs.begin(),
-        batch_pairs.end(),
-        [](const AxisPair& a, const AxisPair& b) { return a.lhs < b.lhs; });
-
-    std::unordered_set<int> lhs_excluded(
-        lhs_contract_axes.begin(), lhs_contract_axes.end());
-    lhs_excluded.insert(lhs_batch_axes.begin(), lhs_batch_axes.end());
-    std::unordered_set<int> rhs_excluded(
-        rhs_contract_axes.begin(), rhs_contract_axes.end());
-    rhs_excluded.insert(rhs_batch_axes.begin(), rhs_batch_axes.end());
-
-    std::vector<int> lhs_free;
-    std::vector<int> rhs_free;
-    for (int axis = 0; axis < lhs.Rank(); ++axis) {
-      if (!lhs_excluded.contains(axis)) {
-        lhs_free.push_back(axis);
-      }
-    }
-    for (int axis = 0; axis < rhs.Rank(); ++axis) {
-      if (!rhs_excluded.contains(axis)) {
-        rhs_free.push_back(axis);
-      }
-    }
-
-    std::vector<int> lhs_permutation;
-    std::vector<int> rhs_permutation;
-    for (const AxisPair& pair : batch_pairs) {
-      lhs_permutation.push_back(pair.lhs);
-      rhs_permutation.push_back(pair.rhs);
-    }
-    lhs_permutation.insert(
-        lhs_permutation.end(), lhs_free.begin(), lhs_free.end());
-    rhs_permutation.insert(
-        rhs_permutation.end(), rhs_free.begin(), rhs_free.end());
-    lhs_permutation.insert(
-        lhs_permutation.end(),
-        lhs_contract_axes.begin(),
-        lhs_contract_axes.end());
-    rhs_permutation.insert(
-        rhs_permutation.end(),
-        rhs_contract_axes.begin(),
-        rhs_contract_axes.end());
-
-    NDArray lhs_matrix = lhs.TransposeView(lhs_permutation).ToCOrder();
-    NDArray rhs_matrix = rhs.TransposeView(rhs_permutation).ToCOrder();
-
-    Shape expected_shape = OutputShapeForTensordot(
-        lhs,
-        rhs,
-        lhs_contract_axes,
-        rhs_contract_axes,
-        lhs_batch_axes,
-        rhs_batch_axes);
-    if (output.shape_ != expected_shape) {
-      if (beta != T{}) {
-        throw std::invalid_argument(
-            "cannot apply beta to a mismatched tensordot output");
-      }
-      output = NDArray(expected_shape);
-    }
-    if (!output.IsContiguous()) {
+    if (output.shape_ == plan.output_shape && !output.IsContiguous()) {
       throw std::invalid_argument("tensordot output must be C contiguous");
     }
 
-    std::size_t batch_size = 1;
-    for (const AxisPair& pair : batch_pairs) {
-      batch_size *= lhs.shape_[pair.lhs];
+    // Preserve inputs when the caller accumulates into an overlapping view.
+    // Ordinary einsum outputs are disjoint, so this requires no data copies.
+    std::optional<NDArray> lhs_snapshot;
+    std::optional<NDArray> rhs_snapshot;
+    if (alpha != T{} && plan.k != 0) {
+      if (lhs.Overlaps(output)) {
+        lhs_snapshot.emplace(lhs.Clone());
+      }
+      if (rhs.Overlaps(output)) {
+        rhs_snapshot.emplace(rhs.Clone());
+      }
     }
-
-    std::size_t m = 1;
-    for (const int axis : lhs_free) {
-      m *= lhs.shape_[axis];
+    const NDArray& a = lhs_snapshot ? *lhs_snapshot : lhs;
+    const NDArray& b = rhs_snapshot ? *rhs_snapshot : rhs;
+    if (output.shape_ != plan.output_shape) {
+      output = NDArray(plan.output_shape);
     }
-    std::size_t n = 1;
-    for (const int axis : rhs_free) {
-      n *= rhs.shape_[axis];
-    }
-    std::size_t k = 1;
-    for (const int axis : lhs_contract_axes) {
-      k *= lhs.shape_[axis];
-    }
-
-    const std::size_t lhs_batch_stride = m * k;
-    const std::size_t rhs_batch_stride = n * k;
-    const std::size_t output_batch_stride = m * n;
-
-    if (m == 0 || n == 0) {
+    if (output.Size() == 0) {
       return;
     }
-
-    if (k == 0) {
+    if (plan.k == 0 || alpha == T{}) {
       for (std::size_t i = 0; i < output.Size(); ++i) {
-        output.data_[i] *= beta;
+        output.data_[i] = beta == T{} ? T{} : beta * output.data_[i];
       }
       return;
     }
 
+#if defined(WICKQC_USE_TBLIS)
+    backend::TblisContract(
+        a.data_,
+        backend::TblisMetadata(a.shape_, a.strides_, plan.lhs_indices),
+        b.data_,
+        backend::TblisMetadata(b.shape_, b.strides_, plan.rhs_indices),
+        output.data_,
+        backend::TblisMetadata(
+            output.shape_, output.strides_, plan.output_indices),
+        alpha,
+        beta);
+#else
+    const NDArray lhs_matrix = a.TransposeView(plan.lhs_permutation).ToCOrder();
+    const NDArray rhs_matrix = b.TransposeView(plan.rhs_permutation).ToCOrder();
+    const std::size_t lhs_batch_stride = plan.m * plan.k;
+    const std::size_t rhs_batch_stride = plan.n * plan.k;
+    const std::size_t output_batch_stride = plan.m * plan.n;
     std::vector<T> temporary;
     if (beta != T{}) {
       temporary.resize(output_batch_stride);
     }
-
-    for (std::size_t batch = 0; batch < batch_size; ++batch) {
+    for (std::size_t batch = 0; batch < plan.batches; ++batch) {
       const T* lhs_ptr = lhs_matrix.data_ + batch * lhs_batch_stride;
       const T* rhs_ptr = rhs_matrix.data_ + batch * rhs_batch_stride;
       T* output_ptr = output.data_ + batch * output_batch_stride;
-
       if (beta == T{}) {
-        blas::Gemm<T>(m, n, k, n, alpha, lhs_ptr, rhs_ptr, output_ptr);
+        blas::Gemm<T>(
+            plan.m,
+            plan.n,
+            plan.k,
+            plan.n,
+            alpha,
+            lhs_ptr,
+            rhs_ptr,
+            output_ptr);
       } else {
-        blas::Gemm<T>(m, n, k, n, alpha, lhs_ptr, rhs_ptr, temporary.data());
+        blas::Gemm<T>(
+            plan.m,
+            plan.n,
+            plan.k,
+            plan.n,
+            alpha,
+            lhs_ptr,
+            rhs_ptr,
+            temporary.data());
         for (std::size_t i = 0; i < output_batch_stride; ++i) {
           output_ptr[i] = temporary[i] + beta * output_ptr[i];
         }
       }
     }
+#endif
   }
 
   [[nodiscard]] static NDArray Einsum(
@@ -1175,6 +1135,17 @@ class NDArray {
     return {min_offset, max_offset};
   }
 
+  [[nodiscard]] bool Overlaps(const NDArray& other) const noexcept {
+    if (Size() == 0 || other.Size() == 0) {
+      return false;
+    }
+    const auto [begin, end] = StorageBounds();
+    const auto [other_begin, other_end] = other.StorageBounds();
+    const std::less<const T*> less;
+    return less(data_ + begin, other.data_ + other_end + 1) &&
+        less(other.data_ + other_begin, data_ + end + 1);
+  }
+
   void AllocateForStrides() {
     if (Size() == 0) {
       storage_ = std::make_shared<std::vector<T>>();
@@ -1282,117 +1253,6 @@ class NDArray {
       }
       result.data_[linear] =
           operation(data_[lhs_offset], other.data_[rhs_offset]);
-    }
-    return result;
-  }
-
-  static void ValidateAxisList(
-      const NDArray& array,
-      const std::vector<int>& axes,
-      std::string_view name) {
-    std::unordered_set<int> seen;
-    for (const int axis : axes) {
-      if (axis < 0 || axis >= array.Rank() || !seen.insert(axis).second) {
-        throw std::invalid_argument(
-            std::string("invalid ") + std::string(name) + " axis list");
-      }
-    }
-  }
-
-  static void ValidateAxes(
-      const NDArray& lhs,
-      const NDArray& rhs,
-      const std::vector<int>& lhs_contract_axes,
-      const std::vector<int>& rhs_contract_axes,
-      const std::vector<int>& lhs_batch_axes,
-      const std::vector<int>& rhs_batch_axes) {
-    if (lhs_contract_axes.size() != rhs_contract_axes.size()) {
-      throw std::invalid_argument("contracted axis count mismatch");
-    }
-    if (lhs_batch_axes.size() != rhs_batch_axes.size()) {
-      throw std::invalid_argument("batch axis count mismatch");
-    }
-    ValidateAxisList(lhs, lhs_contract_axes, "lhs contract");
-    ValidateAxisList(rhs, rhs_contract_axes, "rhs contract");
-    ValidateAxisList(lhs, lhs_batch_axes, "lhs batch");
-    ValidateAxisList(rhs, rhs_batch_axes, "rhs batch");
-
-    std::unordered_set<int> lhs_used(
-        lhs_contract_axes.begin(), lhs_contract_axes.end());
-    for (const int axis : lhs_batch_axes) {
-      if (!lhs_used.insert(axis).second) {
-        throw std::invalid_argument("lhs axis is both batch and contracted");
-      }
-    }
-    std::unordered_set<int> rhs_used(
-        rhs_contract_axes.begin(), rhs_contract_axes.end());
-    for (const int axis : rhs_batch_axes) {
-      if (!rhs_used.insert(axis).second) {
-        throw std::invalid_argument("rhs axis is both batch and contracted");
-      }
-    }
-
-    for (std::size_t i = 0; i < lhs_contract_axes.size(); ++i) {
-      if (lhs.shape_[lhs_contract_axes[i]] !=
-          rhs.shape_[rhs_contract_axes[i]]) {
-        throw std::invalid_argument("contracted dimensions do not match");
-      }
-    }
-    for (std::size_t i = 0; i < lhs_batch_axes.size(); ++i) {
-      if (lhs.shape_[lhs_batch_axes[i]] != rhs.shape_[rhs_batch_axes[i]]) {
-        throw std::invalid_argument("batch dimensions do not match");
-      }
-    }
-  }
-
-  static Shape OutputShapeForTensordot(
-      const NDArray& lhs,
-      const NDArray& rhs,
-      const std::vector<int>& lhs_contract_axes,
-      const std::vector<int>& rhs_contract_axes,
-      const std::vector<int>& lhs_batch_axes,
-      const std::vector<int>& rhs_batch_axes) {
-    ValidateAxes(
-        lhs,
-        rhs,
-        lhs_contract_axes,
-        rhs_contract_axes,
-        lhs_batch_axes,
-        rhs_batch_axes);
-
-    struct AxisPair {
-      int lhs;
-      int rhs;
-    };
-    std::vector<AxisPair> batch_pairs;
-    for (std::size_t i = 0; i < lhs_batch_axes.size(); ++i) {
-      batch_pairs.push_back({lhs_batch_axes[i], rhs_batch_axes[i]});
-    }
-    std::sort(
-        batch_pairs.begin(),
-        batch_pairs.end(),
-        [](const AxisPair& a, const AxisPair& b) { return a.lhs < b.lhs; });
-
-    std::unordered_set<int> lhs_excluded(
-        lhs_contract_axes.begin(), lhs_contract_axes.end());
-    lhs_excluded.insert(lhs_batch_axes.begin(), lhs_batch_axes.end());
-    std::unordered_set<int> rhs_excluded(
-        rhs_contract_axes.begin(), rhs_contract_axes.end());
-    rhs_excluded.insert(rhs_batch_axes.begin(), rhs_batch_axes.end());
-
-    Shape result;
-    for (const AxisPair& pair : batch_pairs) {
-      result.push_back(lhs.shape_[pair.lhs]);
-    }
-    for (int axis = 0; axis < lhs.Rank(); ++axis) {
-      if (!lhs_excluded.contains(axis)) {
-        result.push_back(lhs.shape_[axis]);
-      }
-    }
-    for (int axis = 0; axis < rhs.Rank(); ++axis) {
-      if (!rhs_excluded.contains(axis)) {
-        result.push_back(rhs.shape_[axis]);
-      }
     }
     return result;
   }

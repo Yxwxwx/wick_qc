@@ -20,20 +20,31 @@ using symbolic::Expression;
 using symbolic::OrbitalSpace;
 using symbolic::TensorSymmetry;
 
-UgaCcsdGenerator::UgaCcsdGenerator() {
+UgaCcsdGenerator::UgaCcsdGenerator(IntegralConvention convention) {
   indices_.Add(OrbitalSpace::kInactive, "pqrsijklmno");
   indices_.Add(OrbitalSpace::kExternal, "pqrsabcdefg");
-  symmetries_.Add("v", 4, TensorSymmetry::QuantumChemistryPhysicists());
+  const bool chemist = convention == IntegralConvention::kChemist;
+  symmetries_.Add(
+      "v",
+      4,
+      chemist ? TensorSymmetry::QuantumChemistryChemists()
+              : TensorSymmetry::QuantumChemistryPhysicists());
   symmetries_.Add("t", 4, TensorSymmetry::SpinFree(2));
   const auto fock_definition = std::pair(
       symbolic::Tensor::Parse("h[pq]", indices_, symmetries_),
-      Parse("f[pq]\n-2 SUM <j> v[pjqj]\n+SUM <j> v[pjjq]"));
+      Parse(
+          chemist ? "f[pq]\n-2 SUM <j> v[pqjj]\n+SUM <j> v[pjjq]"
+                  : "f[pq]\n-2 SUM <j> v[pjqj]\n+SUM <j> v[pjjq]"));
   const std::map<std::string, std::pair<symbolic::Tensor, Expression>>
       definitions = {{"h", fock_definition}};
   const auto one_body = Parse("SUM <pq> h[pq] E1[p,q]").Substitute(definitions);
-  const auto two_body = Parse("0.5 SUM <pqrs> v[pqrs] E2[pq,rs]");
+  const auto two_body = Parse(
+      chemist ? "0.5 SUM <pqrs> v[pqrs] E2[pr,qs]"
+              : "0.5 SUM <pqrs> v[pqrs] E2[pq,rs]");
   const auto reference_energy =
-      Parse("2 SUM <i> h[ii]\n+2 SUM <ij> v[ijij]\n-SUM <ij> v[ijji]")
+      Parse(
+          chemist ? "2 SUM <i> h[ii]\n+2 SUM <ij> v[iijj]\n-SUM <ij> v[ijji]"
+                  : "2 SUM <i> h[ii]\n+2 SUM <ij> v[ijij]\n-SUM <ij> v[ijji]")
           .Substitute(definitions);
   h_ = (one_body + two_body - reference_energy).Simplify();
   singles_ = Parse("SUM <ai> t[ai] E1[a,i]");

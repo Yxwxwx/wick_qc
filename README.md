@@ -4,7 +4,7 @@
 quantum-chemistry methods. The current implementation covers fermionic and
 spin-free normal ordering, contractions, symmetry-aware simplification,
 Tensor Equation IR, Einsum IR, contraction-graph optimization, NumPy rendering,
-and C++ numerical execution through NDArray and selectable GEMM backends.
+and C++ numerical execution through NDArray with TBLIS or BLAS backends.
 
 The independent implementation is built as `wickqc_symbolic` from
 `src/symbolic`, `src/equation`, `src/einsum`, and `src/method`. The supplied
@@ -17,7 +17,7 @@ helpers.
 
 ## Build
 
-The default build requires CMake 3.25+, a C++20 compiler, and OpenMP.
+The default build requires CMake 3.25+, C and C++20 compilers, and OpenMP.
 It builds the library, CLI, and standalone method examples without GoogleTest,
 `tests/`, or `docs/wick.hpp`.
 
@@ -26,10 +26,13 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 4
 ```
 
+`EINSUM_BACKEND` selects `BLAS` (default) or `TBLIS`. For the BLAS path,
 `BLAS_BACKEND` selects `NATIVE` (default), `SIMPLE`, `MKL`, `OPENBLAS`, or
 `BLIS`. NATIVE and SIMPLE need no external BLAS installation. The numerical
 library is `wickqc_runtime`; generic NDArray users can link only the
-`wickqc_ndarray` interface target. `wickqc_symbolic` has no BLAS dependency.
+`wickqc_ndarray` interface target. `wickqc_symbolic` has no numerical-backend
+dependency. Selection is per build, and all consumers of NDArray should link
+the same interface target to inherit consistent definitions and libraries.
 
 ```bash
 cmake -S . -B build/openblas -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -38,12 +41,23 @@ cmake -S . -B build/blis -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DBLAS_BACKEND=BLIS -DBLIS_ROOT=/path/to/blis
 module load mkl-2024.2.1
 cmake -S . -B build/mkl -G Ninja -DCMAKE_BUILD_TYPE=Release -DBLAS_BACKEND=MKL
+cmake -S . -B build/tblis -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DEINSUM_BACKEND=TBLIS -DTBLIS_ROOT=/path/to/tblis/install
+cmake --build build/tblis -j 4
 ```
 
 BLIS requires its CBLAS interface. MKL is discovered through its CMake package
 or `MKLROOT` and defaults to sequential GEMM; `MKL_THREADING` can select a
 threading layer compatible with the application. OpenMP is linked explicitly
 for NDArray reductions. Control BLAS/OpenMP thread counts in the calling job.
+
+TBLIS is discovered with `find_package(TBLIS CONFIG REQUIRED)` and linked
+through `TBLIS::tblis`; `CMAKE_PREFIX_PATH` also works in place of `TBLIS_ROOT`.
+The project enables both C and CXX for that package's dependencies. This path
+does not select a separate GEMM backend: `BLAS_BACKEND` is unused when
+`EINSUM_BACKEND=TBLIS`. Set `TBLIS_NUM_THREADS` for TBLIS and `OMP_NUM_THREADS`
+for NDArray reductions. The installed TBLIS 2.0 also falls back to
+`BLIS_NUM_THREADS`, then `OMP_NUM_THREADS`, if its own variable is unset.
 
 ## Execute Wick equations with NDArray
 
@@ -56,8 +70,20 @@ The execution path is:
 
 ```text
 method.Equations() → optional graph.Simplify() → NdArrayExecutor::Compile()
-                  → Evaluate(tensors, dimensions) → NDArray einsum → GEMM
+                  → Evaluate(tensors, dimensions) → NDArray::Einsum()
+                  → einsum planning → binary ContractionPlan
+                     ├─ TBLIS: tensor views → tblis_tensor_mult
+                     └─ BLAS: tensor → matrix transpose/pack → Gemm
+                              ├─ MKL / BLIS / OpenBLAS
+                              └─ NATIVE / SIMPLE
 ```
+
+Both executors consume the same axis pairing and output order from
+`src/backend/contraction_plan.hpp`. `src/backend/tblis.hpp` passes tensor
+lengths, strides, labels, and alpha/beta directly to `tblis_tensor_mult`.
+NDArray performs no matrix packing on that path; TBLIS handles its own
+internal execution. Diagonals, unary reductions, copies, and permutations
+remain NDArray operations, so no TBLIS level-1 entry points are needed.
 
 ```cpp
 #include "method/spatial_cc.h"
@@ -87,7 +113,11 @@ broadcast ones, applies coefficients and output permutations, schedules graph
 dependencies, and releases intermediates after their last use. Results start
 at zero and own their storage; input views are never modified. Graph assignment
 names must be unique. `double` and `std::complex<double>` are supported by all
-five backends; einsum multiplication does not implicitly conjugate operands.
+BLAS backends and TBLIS; einsum multiplication does not implicitly conjugate
+operands. TBLIS accepts strided input views, including negative and zero
+strides. `TensordotInto` requires a C-contiguous output; overlapping inputs
+are snapshotted before execution. Empty contractions and alpha/beta scaling
+are handled consistently across executors.
 
 MP2--MP4 and CCSD/T/Q use the same adapter. SC-/IC-NEVPT2 return named graphs;
 compile/evaluate each entry of `ScNevpt2Generator().Equations()` or
@@ -97,8 +127,12 @@ energy assembly/linear solves, and iterative MP/CC amplitude solvers remain at
 the method/application layer; this adapter executes the tensor equations.
 
 Graph compilation and optimization are explicit setup operations. During
-evaluation, NDArray consumes integer index lists and prepares contractions and
-packing using the supplied shapes. This is a reusable runtime executor, not
+evaluation, NDArray consumes integer index lists and prepares contractions
+using the supplied shapes, with packing for BLAS when needed. Integer indices
+are remapped locally for TBLIS, without restricting the caller's label values.
+The installed TBLIS label type limits the number of distinct indices in one
+binary contraction (256 for its default `char`); exceeding that limit throws
+instead of silently colliding labels. This is a reusable runtime executor, not
 yet the project's planned constexpr contraction/workspace compiler.
 
 A complete MP2 model supplies integrals and denominator-divided amplitudes,
@@ -139,9 +173,10 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 tests/numerical/check_methods.p
 
 ## Standalone method examples
 
-`unit_test/` contains three runnable examples using only `wickqc_symbolic`.
-They generate all equations for the selected method and write NumPy code to
-stdout. The complete method implementations live in `src/method/`.
+`unit_test/test_spatial_*.cpp` contains three runnable equation generators
+using only `wickqc_symbolic`. They write NumPy code to stdout. The complete
+method implementations live in `src/method/`. The separate molecular example
+below links `wickqc_runtime` and executes the equations numerically.
 
 ```bash
 ./build/test_spatial_mp 2 > build/mp2.generated.py
@@ -159,6 +194,91 @@ MP takes perturbation order (2--4); CC takes maximum excitation rank
 SC-/IC-NEVPT2 output compute functions for every subspace. These programs
 generate equations; integrals, RDMs, and amplitudes are supplied by the caller.
 High-rank CC generation takes substantially longer than CCSD.
+
+MP and spatial CC also accept `--chemist`, with or without `--optimize`:
+
+```bash
+./build/test_spatial_mp 2 --chemist --optimize
+./build/wick_qc spatial-cc 2 --chemist --optimize
+```
+
+Chemist notation is native to the symbolic engine:
+`TensorSymmetry::QuantumChemistryChemists()` supplies the eightfold symmetry
+of `(pq|rs)`. In this convention the two-body operator is
+`0.5 SUM <pqrs> v[pqrs] E2[pr,qs]`, corresponding to `C_p C_r D_s D_q`.
+The Fock/reference-energy terms, tensor symmetry, Wick expansion, and graph
+optimization all use that convention directly. The numerical backend receives
+chemist integral blocks without converting them to physicist notation.
+
+The C++ constructors `SpatialMpGenerator(order, convention)`,
+`SpatialCcGenerator(rank, convention)`, and `UgaCcsdGenerator(convention)` accept
+`IntegralConvention::kChemist` or `IntegralConvention::kPhysicist`.
+The default remains physicist notation, `v[p,q,r,s] = (pr|qs)`.
+
+## Molecular validation: H2O/cc-pVDZ against PySCF
+
+This complete example runs RHF and MP2 in PySCF, then exports the common MO
+integrals, orbital energies, Fock matrix, and CCSD initial guess. C++ computes
+MP2 amplitudes from the denominators and evaluates the Wick-derived MP2 energy.
+It also evaluates the full CCSD residuals, applies one Jacobi update, and
+evaluates the energy using its own updated amplitudes. Python compares those
+energies, all MP2/CCSD amplitudes, and the initial CCSD residuals with PySCF.
+The chemist and physicist paths are both checked against the same data.
+
+```bash
+cmake --build build --target test_h2o_pyscf -j 2
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 unit_test/validate_h2o_pyscf.py \
+  --executable build/test_h2o_pyscf --output build/h2o_ccpvdz
+# Compare TBLIS and BLAS using the same PySCF inputs:
+python3 unit_test/validate_h2o_pyscf.py --threads 1 \
+  --executable build/tblis/test_h2o_pyscf build/test_h2o_pyscf \
+  --output build/h2o_tblis_blas
+```
+
+PySCF and NumPy are needed only for this Python reference driver; the C++
+executable has no Python or `tests/` dependency. To compare several configured
+backends on one RHF calculation, pass their binaries together after
+`--executable`. The optional numerical CTest suite registers `pyscf_h2o` when
+PySCF is available.
+
+The fixed geometry is `O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587`, in
+angstrom, with spherical cc-pVDZ, neutral singlet RHF, no frozen orbitals,
+and no density fitting: 5 occupied and 19 virtual orbitals. RHF tolerances are
+`conv_tol=1e-12` and `conv_tol_grad=1e-10`.
+
+The shared initial guess comes from PySCF `CCSD.init_amps`. “Step 1” means one
+[`CCSD.update_amps`](https://pyscf.org/_modules/pyscf/cc/ccsd.html) call with
+DIIS disabled, damping 1, and level shift 0, followed by energy evaluation.
+It is not a converged CCSD energy. The spin-free covariant residuals obey
+`r1 = 2 R1` and `r2(abij) = 4 R2(abij) - 2 R2(abji)`; the example applies the
+inverse metric before the denominator update. No factors are fitted to the
+PySCF result. Checking every updated amplitude is stronger than checking only
+the scalar first-step energy, though it does not prove all later iterates.
+
+For PySCF 2.9.0, the reference results in hartree are:
+
+| Quantity | Value |
+| --- | ---: |
+| RHF total energy | -76.02676567311991 |
+| MP2 correlation energy | -0.20401996728831104 |
+| MP2 total energy | -76.23078564040823 |
+| CCSD initial correlation energy | -0.20401996728756900 |
+| CCSD step-1 correlation energy | -0.20896784054661066 |
+| CCSD step-1 total energy | -76.23573351366652 |
+
+`comparison.json` records the geometry, versions, input hashes, reference and
+C++ energies, tolerances, and maximum amplitude/residual errors. Inputs and
+C++ output arrays remain beside it for inspection. Tiny differences in the
+last digits can result from SCF/BLAS versions. A failed comparison exits with
+an error instead of accepting a changed tolerance.
+
+With TBLIS 2.0 and PySCF 2.9.0, both integral conventions pass: the MP2
+correlation-energy difference is zero at double precision, the CCSD step-1
+energy difference is `1.11e-16` hartree, and the maximum updated T1/T2 errors
+are `3.50e-16` / `7.12e-17`. NATIVE and OpenBLAS also pass with the same
+exported inputs. TBLIS additionally passes the 130-output MP2--MP4, CCSD,
+SC-/IC-NEVPT2 comparison against the original NumPy equations and the focused
+real/complex, strided, batch, accumulation, and empty-space tests.
 
 ## Optional local regression suite
 

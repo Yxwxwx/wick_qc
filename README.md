@@ -4,22 +4,23 @@
 quantum-chemistry methods. The current implementation covers fermionic and
 spin-free normal ordering, contractions, symmetry-aware simplification,
 Tensor Equation IR, Einsum IR, contraction-graph optimization, NumPy rendering,
-and C++ numerical execution through NDArray with TBLIS or BLAS backends.
+and build-time C++ code generation and numerical execution through NDArray
+with TBLIS or BLAS backends.
 
 The independent implementation is built as `wickqc_symbolic` from
 `src/symbolic`, `src/equation`, `src/einsum`, and `src/method`. The supplied
-`docs/wick.hpp` is a local, Git-ignored block2 reference. It is used only by
-the optional regression suite and is not required by the default build.
+`docs/wick.hpp` is a local, Git-ignored block2 reference. It is retained for
+algorithm and convention comparisons and is not required by the build.
 
 Declaration headers use `.h`, with definitions in `.cpp`. Headers containing
-implementations retain `.hpp`, including the block2 oracle and inline comparison
-helpers.
+implementations retain `.hpp`, including the NDArray backends and the block2
+reference.
 
 ## Build
 
 The default build requires CMake 3.25+, C and C++20 compilers, and OpenMP.
-It builds the library, CLI, and standalone method examples without GoogleTest,
-`tests/`, or `docs/wick.hpp`.
+It builds the libraries and command-line tools. The supplied `docs/wick.hpp`
+reference is not a build dependency.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -58,6 +59,12 @@ does not select a separate GEMM backend: `BLAS_BACKEND` is unused when
 `EINSUM_BACKEND=TBLIS`. Set `TBLIS_NUM_THREADS` for TBLIS and `OMP_NUM_THREADS`
 for NDArray reductions. The installed TBLIS 2.0 also falls back to
 `BLIS_NUM_THREADS`, then `OMP_NUM_THREADS`, if its own variable is unset.
+
+The repository `.clangd` reads `build/compile_commands.json`. To edit the
+optional TBLIS adapter while the main build uses BLAS, configure `build/tblis`
+as above; that header uses the TBLIS compilation database for its dependency
+paths. Reconfigure the corresponding build directory after changing targets
+or backend settings.
 
 ## Execute Wick equations with NDArray
 
@@ -132,8 +139,8 @@ using the supplied shapes, with packing for BLAS when needed. Integer indices
 are remapped locally for TBLIS, without restricting the caller's label values.
 The installed TBLIS label type limits the number of distinct indices in one
 binary contraction (256 for its default `char`); exceeding that limit throws
-instead of silently colliding labels. This is a reusable runtime executor, not
-yet the project's planned constexpr contraction/workspace compiler.
+instead of silently colliding labels. Orbital dimensions and strides remain runtime data, including in the
+precompiled method kernels described below.
 
 A complete MP2 model supplies integrals and denominator-divided amplitudes,
 evaluates the optimized Wick graph, and checks its energy/residuals:
@@ -150,158 +157,115 @@ auto c = wickqc::NDArray<double>::Einsum("ik,jk->ij", {a, b});
 auto d = wickqc::NDArray<double>::Einsum({{0, 1}, {2, 1}}, {0, 2}, {a, b});
 ```
 
-## Optional numerical validation
+## Build-time MP/CC code generation
 
-The Git-ignored `tests/numerical` suite is independent of `docs/wick.hpp` and
-does not enable the large block2 regression suite. It checks scalar-loop GEMM
-references, real/complex tensors, views, diagonals, reductions, broadcasts,
-permutations, empty spaces, invalid inputs, and method results against the
-original NumPy equations. Tests use two orbital shapes and tensors satisfying
-the declared symmetries.
+CMake/Ninja builds `generate_cpp`, runs Wick expansion and graph optimization,
+and compiles the emitted `build/.../generated/*.generated.cpp` into
+`wickqc_precompiled`. Generated functions call integer-index
+`NDArray::Einsum()` directly. They retain the runtime executor's input checks,
+output permutations, intermediate scheduling, and last-use releases.
 
-```bash
-module load googletest/1.15.0
-cmake -S . -B build/numerical -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DWICKQC_BUILD_NUMERICAL_TESTS=ON -DBLAS_BACKEND=NATIVE
-cmake --build build/numerical -j 4
-ctest --test-dir build/numerical --output-on-failure
-# Longer high-rank CC validation (default CTest covers CCSD):
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 tests/numerical/check_methods.py \
-  "$PWD/build/numerical/tests/numerical/check_ndarray_methods" \
-  "$PWD/build/numerical/cc_through_quadruples" 4
-```
-
-## Standalone method examples
-
-`unit_test/test_spatial_*.cpp` contains three runnable equation generators
-using only `wickqc_symbolic`. They write NumPy code to stdout. The complete
-method implementations live in `src/method/`. The separate molecular example
-below links `wickqc_runtime` and executes the equations numerically.
+**Only the method equations are fixed at build time.** Integral values,
+amplitudes, orbital dimensions, and NDArray shapes/strides are supplied at
+runtime. The generator has no molecular-data argument and never reads PySCF
+files. The same compiled function can evaluate different molecular sizes.
+Einsum planning, tensor allocation, and the selected TBLIS/BLAS execution still
+happen at runtime; Wick expansion and equation lowering do not.
 
 ```bash
-./build/test_spatial_mp 2 > build/mp2.generated.py
-./build/test_spatial_mp 3 > build/mp3.generated.py
-./build/test_spatial_mp 4 --optimize > build/mp4.generated.py
-./build/test_spatial_cc 2 > build/ccsd.generated.py
-./build/test_spatial_cc 3 > build/ccsdt.generated.py
-./build/test_spatial_cc 4 --optimize > build/ccsdtq.generated.py
-./build/test_nevpt2_methods sc --optimize > build/sc_nevpt2.generated.py
-./build/test_nevpt2_methods ic > build/ic_nevpt2.generated.py
+# Defaults: MP2--MP4, CCSD and CCSDT, native chemist notation.
+cmake -S . -B build/aot -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DWICKQC_PRECOMPILE_MP="2;3;4" -DWICKQC_PRECOMPILE_CC="2;3" \
+  -DWICKQC_PRECOMPILE_CONVENTIONS=chemist
+cmake --build build/aot -j 3
+
+# Optionally compile CCSDTQ as well, or support both integral conventions.
+cmake -S . -B build/aot -DWICKQC_PRECOMPILE_CC="2;3;4" \
+  -DWICKQC_PRECOMPILE_CONVENTIONS="chemist;physicist"
+cmake --build build/aot -j 3
+
+# Empty selections give a runtime-only method registry.
+cmake -S . -B build/runtime_only -G Ninja \
+  -DWICKQC_PRECOMPILE_MP="" -DWICKQC_PRECOMPILE_CC=""
 ```
 
-MP takes perturbation order (2--4); CC takes maximum excitation rank
-(2=CCSD, 3=CCSDT, 4=CCSDTQ). MP and CC output energies and amplitude residuals;
-SC-/IC-NEVPT2 output compute functions for every subspace. These programs
-generate equations; integrals, RDMs, and amplitudes are supplied by the caller.
-High-rank CC generation takes substantially longer than CCSD.
+CC numbers are maximum excitation ranks: 2=CCSD, 3=CCSDT, 4=CCSDTQ.
+The choices control which kernels enter the library/binary. High-rank
+expansion can take minutes; Ninja limits concurrent code-generation jobs to
+one. Generated files are build artifacts, marked as generated and covered by
+`build/` in `.gitignore`. No molecular dimensions are CMake options. Ninja
+tracks the generator executable and its source dependencies; changing the
+method selection updates the registry and the selected generated sources.
 
-MP and spatial CC also accept `--chemist`, with or without `--optimize`:
+`runtime::SpatialEvaluator` selects a precompiled kernel when present. An
+unselected method is expanded and lowered once in its constructor; keep the
+object for all subsequent evaluations. `GenerationPolicy::kPrecompiledOnly`
+rejects missing kernels, and `kRuntimeOnly` explicitly exercises the fallback.
+An unselected high-order method therefore has a **one-time runtime Wick cost**;
+its evaluations perform no symbolic work. Avoiding that first cost requires
+selecting the method during the build.
 
-```bash
-./build/test_spatial_mp 2 --chemist --optimize
-./build/wick_qc spatial-cc 2 --chemist --optimize
+```cpp
+#include "method/rhf_data.h"
+#include "runtime/spatial_evaluator.h"
+
+// All counts and arrays come from the host program or files at runtime.
+wickqc::method::RhfData data{nocc, mo_energies, fock_mo, eri_chemist};
+wickqc::runtime::SpatialEvaluator cc({
+    wickqc::method::SpatialFamily::kCc, requested_rank,
+    wickqc::method::IntegralConvention::kChemist});
+// amplitudes contains tEI, tEEII, and higher-rank tensors as required.
+auto inputs = data.Bind(cc.Inputs(), amplitudes);
+auto outputs = cc.Evaluate(inputs, data.Dimensions());
+// Repeat with updated amplitudes using the same cc object.
 ```
 
-Chemist notation is native to the symbolic engine:
-`TensorSymmetry::QuantumChemistryChemists()` supplies the eightfold symmetry
-of `(pq|rs)`. In this convention the two-body operator is
-`0.5 SUM <pqrs> v[pqrs] E2[pr,qs]`, corresponding to `C_p C_r D_s D_q`.
-The Fock/reference-energy terms, tensor symmetry, Wick expansion, and graph
-optimization all use that convention directly. The numerical backend receives
-chemist integral blocks without converting them to physicist notation.
+Link this host to `wickqc_methods` and `wickqc_rhf`. For a host that uses only
+precompiled methods, link `wickqc_precompiled` and `wickqc_rhf`, include
+`runtime/precompiled.h`, and obtain the `NumericKernel` through
+`FindPrecompiled(SpatialMethod)`. That path has no link dependency on the Wick
+engine. `PrecompiledMethods()` lists the configured selection. The
+`wickqc_numeric` library provides just the shared runtime tensor contracts.
+Generated kernels support `double` and `complex<double>`; the RHF data adapter
+uses real integrals/amplitudes. The spin-free
+method equations retain their existing real-orbital symmetry conventions.
 
-The C++ constructors `SpatialMpGenerator(order, convention)`,
-`SpatialCcGenerator(rank, convention)`, and `UgaCcsdGenerator(convention)` accept
-`IntegralConvention::kChemist` or `IntegralConvention::kPhysicist`.
-The default remains physicist notation, `v[p,q,r,s] = (pr|qs)`.
+`RhfData` expects canonical closed-shell spatial MOs, occupied first,
+`eri[p,q,r,s]=(pq|rs)`, and the **MO Fock matrix** (not the core Hamiltonian).
+Its blocks are strided views. For physicist kernels it supplies the matching
+view `v[p,q,r,s]=(pr|qs)`; chemist kernels use the original ordering directly.
+The kernel's `Inputs()` supplies required amplitude names and runtime shapes.
+MP2--MP4 use `u1`/`u2` wavefunction coefficients; CC uses `t` amplitudes, with
+virtual axes followed by occupied axes. Energies are correlation contributions;
+residuals retain the covariant spatial spin metric. This interface evaluates
+these equations at supplied amplitudes; high-order amplitude solvers are a
+separate host responsibility.
 
-## Molecular validation: H2O/cc-pVDZ against PySCF
+### Higher MP orders
 
-This complete example runs RHF and MP2 in PySCF, then exports the common MO
-integrals, orbital energies, Fock matrix, and CCSD initial guess. C++ computes
-MP2 amplitudes from the denominators and evaluates the Wick-derived MP2 energy.
-It also evaluates the full CCSD residuals, applies one Jacobi update, and
-evaluates the energy using its own updated amplitudes. Python compares those
-energies, all MP2/CCSD amplitudes, and the initial CCSD residuals with PySCF.
-The chemist and physicist paths are both checked against the same data.
+`SpatialMpGenerator(order, convention, maximum_excitation_rank=0)` extends the
+existing MP2--MP4 hierarchy to MPn. The unbounded default retains excitation
+ranks through twice the required wavefunction order. A positive optional MP
+bound can use the runtime electron/hole limit, or represent an explicit
+excitation truncation. A bound below the physical limit changes the method.
+`SpatialMethod::maximum_excitation_rank` selects this runtime specialization;
+precompiled kernels use zero (the full equations).
 
-```bash
-cmake --build build --target test_h2o_pyscf -j 2
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 unit_test/validate_h2o_pyscf.py \
-  --executable build/test_h2o_pyscf --output build/h2o_ccpvdz
-# Compare TBLIS and BLAS using the same PySCF inputs:
-python3 unit_test/validate_h2o_pyscf.py --threads 1 \
-  --executable build/tblis/test_h2o_pyscf build/test_h2o_pyscf \
-  --output build/h2o_tblis_blas
+The recursion uses intermediate normalization, `E1=0`,
+`F_N |m> + Q V |m-1> - sum(k=2..m-1) E_k |m-k> = 0`, and Wigner's
+[2m+1 rule](https://doi.org/10.1080/00268978000100121). Writing
+`S_ab=<a|b>`, the energies are
+
+```text
+E_(2m)   = -<m|F_N|m> - sum(a,b=1..m-1) E_(2m-a-b) S_ab
+E_(2m+1) =  <m|V|m>   - sum(a,b=1..m; a+b<=2m-1) E_(2m+1-a-b) S_ab
 ```
 
-PySCF and NumPy are needed only for this Python reference driver; the C++
-executable has no Python or `tests/` dependency. To compare several configured
-backends on one RHF calculation, pass their binaries together after
-`--executable`. The optional numerical CTest suite registers `pyscf_h2o` when
-PySCF is available.
-
-The fixed geometry is `O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587`, in
-angstrom, with spherical cc-pVDZ, neutral singlet RHF, no frozen orbitals,
-and no density fitting: 5 occupied and 19 virtual orbitals. RHF tolerances are
-`conv_tol=1e-12` and `conv_tol_grad=1e-10`.
-
-The shared initial guess comes from PySCF `CCSD.init_amps`. “Step 1” means one
-[`CCSD.update_amps`](https://pyscf.org/_modules/pyscf/cc/ccsd.html) call with
-DIIS disabled, damping 1, and level shift 0, followed by energy evaluation.
-It is not a converged CCSD energy. The spin-free covariant residuals obey
-`r1 = 2 R1` and `r2(abij) = 4 R2(abij) - 2 R2(abji)`; the example applies the
-inverse metric before the denominator update. No factors are fitted to the
-PySCF result. Checking every updated amplitude is stronger than checking only
-the scalar first-step energy, though it does not prove all later iterates.
-
-For PySCF 2.9.0, the reference results in hartree are:
-
-| Quantity | Value |
-| --- | ---: |
-| RHF total energy | -76.02676567311991 |
-| MP2 correlation energy | -0.20401996728831104 |
-| MP2 total energy | -76.23078564040823 |
-| CCSD initial correlation energy | -0.20401996728756900 |
-| CCSD step-1 correlation energy | -0.20896784054661066 |
-| CCSD step-1 total energy | -76.23573351366652 |
-
-`comparison.json` records the geometry, versions, input hashes, reference and
-C++ energies, tolerances, and maximum amplitude/residual errors. Inputs and
-C++ output arrays remain beside it for inspection. Tiny differences in the
-last digits can result from SCF/BLAS versions. A failed comparison exits with
-an error instead of accepting a changed tolerance.
-
-With TBLIS 2.0 and PySCF 2.9.0, both integral conventions pass: the MP2
-correlation-energy difference is zero at double precision, the CCSD step-1
-energy difference is `1.11e-16` hartree, and the maximum updated T1/T2 errors
-are `3.50e-16` / `7.12e-17`. NATIVE and OpenBLAS also pass with the same
-exported inputs. TBLIS additionally passes the 130-output MP2--MP4, CCSD,
-SC-/IC-NEVPT2 comparison against the original NumPy equations and the focused
-real/complex, strided, batch, accumulation, and empty-space tests.
-
-## Optional local regression suite
-
-The full regression suite remains in the Git-ignored `tests/` directory.
-It is disabled by default. When that directory and `docs/wick.hpp` are present,
-enable it explicitly with GoogleTest 1.15 or newer:
-
-```bash
-module load googletest/1.15.0
-cmake -S . -B build/regression -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DWICKQC_BUILD_REGRESSION_TESTS=ON
-cmake --build build/regression -j 4
-ctest --test-dir build/regression --output-on-failure
-```
-
-The suite includes the supplied GHF, CCSD, UGA-CCSD, IC-NEVPT2, SC-NEVPT2,
-and IC-MRCI fixtures, plus symbolic, equation, einsum, and method comparisons.
-The original fixtures remain unchanged in `tests/reference/block2/`.
-The MP, CC, and NEVPT2 comparisons now live in `tests/reference/test_spatial_*.cpp`;
-their executables are `test_spatial_mp_reference`, `test_spatial_cc_reference`,
-and `test_nevpt2_methods_reference`. Regression artifacts are written under
-`build/regression/tests/`. Python and NumPy are optional test dependencies.
-The `reference_wick_probe` target is available only with this suite enabled.
+MP2--MP4 retain their previously validated expressions. MP5 agrees with the
+formula in the [block2 MP driver](https://github.com/block-hczhai/block2-preview/blob/master/pyblock2/mp.py);
+subsequent orders continue the same perturbation hierarchy. Lower energies
+are internal graph dependencies. High-order expansion and dense amplitudes
+can be expensive; no claim is made that arbitrary orders are practical.
 
 ## Generate equations
 
@@ -328,43 +292,6 @@ with amplitudes supplied as inputs. See the [spatial validation record](docs/spa
 for the precise projection, normalization and energy conventions and the
 completed acceptance results.
 
-The generated reference fixture contains 631 NumPy einsum statements. Its
-current byte-for-byte regression fingerprint is:
-
-```text
-SHA-256 7e827e84cf24e5f48de3256eb4f6b36756b49d950ff2d2dc1fe69690766f1cbe
-60202 bytes, 869 lines
-```
-
-`live_reference_equivalence` compares the current C++ implementations directly:
-all five GHF Hamiltonian blocks and their NumPy coefficients, CCSD energy/singles
-and doubles through fourth order, both CCSD integral conventions, intermediate
-BCH expressions, index-type compatibility, and the entire
-IC-NEVPT2 NumPy output. Comparison artifacts are written to the build directory.
-When Python and NumPy are available, `numpy_reference_samples` additionally
-checks 1698 contractions using two seeds/shapes and explicit scalar loops.
-Python and NumPy are test-only dependencies.
-
-`multireference_equivalence` compares SC-NEVPT2 norms and commutators in all eight
-subspaces, both with free external indices and with all indices summed. It also
-compares all 225 IC-MRCI Hamiltonian component pairs and 16 overlap blocks,
-including the two-component nonorthogonal subspace. Each equation passes through
-both local IRs before its NumPy text is compared. Additional checks examine raw
-operation stages, tensor symmetry metadata, nested SC substitutions, and all
-1629 I/A/E partitions of the tested E1/E2 operator patterns. The supplied
-fixtures' `assert()` checks remain enabled in Release builds.
-
-See [`docs/block2_multireference_comparison.md`](docs/block2_multireference_comparison.md)
-for the implementation differences found and the scope of this comparison.
-The [code review](docs/code_review.md) records the original gaps and tooling
-audit. The [continuing alignment report](docs/block2_alignment.md) records
-single-occupancy and tagged-operator fixes, all three expansion controls,
-binary serialization interoperability, and UGA-CCSD comparisons through
-fourth order, including optimized CCSD and UGA-CCSD graphs. The
-[operation inventory](docs/block2_api_coverage.md) maps the reference workflow
-to the independent implementation and states its validation limits. Verified reference errors are
-corrected and documented in the [difference register](docs/block2_differences.md).
-
 The symbolic API includes simultaneous `RenameIndices`, tensor-definition
 `ParseDefinition`, capture-avoiding `Substitute`, and `FullySummedProduct`.
 Parsing accepts inline sums, parenthesized numeric coefficients, bracketed and
@@ -387,12 +314,7 @@ Initialize named output arrays to zero before executing a graph fragment.
 Intermediate arrays are created and released by the fragment. Broadcast
 operands such as `ident2EI` must be supplied as all-ones arrays with the
 indicated orbital-domain dimensions; domain suffixes prevent shape collisions
-inside a graph. Graph numerical
-tests compare execution with direct scalar evaluation of the original equations
-and check that input tensors are unchanged.
-
-The validated scope, conventions, and v0.0.1 acceptance mapping are recorded in
-[`docs/v0.0.1_validation.md`](docs/v0.0.1_validation.md).
+inside a graph.
 
 The design and release roadmap are documented in
 [`docs/wick_qc_project_plan.md`](docs/wick_qc_project_plan.md).

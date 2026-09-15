@@ -1,28 +1,18 @@
 #pragma once
 
-#include "backend/ndarray.hpp"
 #include "equation/graph.h"
+#include "runtime/tensor_binding.h"
 
-#include <complex>
-#include <cstddef>
-#include <map>
+#include <complex> // IWYU pragma: keep (explicit instantiations below)
+#include <cstdint>
 #include <string>
 #include <vector>
 
+namespace wickqc::codegen {
+class CppEmitter;
+}
+
 namespace wickqc::runtime {
-
-using Dimensions = std::map<symbolic::IndexDomain, std::size_t>;
-template <typename T = double>
-using TensorMap = std::map<std::string, NDArray<T>>;
-
-// Names follow the NumPy emitter (e.g. vIIEE, tEEII, E1); axes retain the
-// method's orbital and spin domains. General domains require an explicit size.
-struct TensorBinding {
-  std::string name;
-  std::vector<symbolic::IndexDomain> domains;
-  [[nodiscard]] std::vector<std::size_t> Shape(const Dimensions& dimensions) const;
-  bool operator==(const TensorBinding&) const = default;
-};
 
 // Compile once after Wick expansion, optionally from graph.Simplify().
 // Evaluation performs no symbolic algebra or string einsum parsing. Each call
@@ -38,7 +28,8 @@ class NdArrayExecutor {
   [[nodiscard]] TensorMap<T> Evaluate(const TensorMap<T>& inputs, const Dimensions& dimensions) const;
 
  private:
-  enum class Source { kInput, kValue, kOnes, kDelta };
+  friend class codegen::CppEmitter;
+  enum class Source : std::uint8_t { kInput, kValue, kOnes, kDelta };
   struct Input {
     TensorBinding binding;
     Source source = Source::kInput;

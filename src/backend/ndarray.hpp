@@ -25,8 +25,6 @@
 #include <optional>
 #include <ostream>
 #include <random>
-#include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -71,7 +69,7 @@ inline std::ptrdiff_t ParseSigned(std::string_view text) {
     throw std::invalid_argument("expected integer, got an empty string");
   }
   std::size_t consumed = 0;
-  const long long parsed = std::stoll(value, &consumed);
+  const auto parsed = std::stoll(value, &consumed);
   if (consumed != value.size()) {
     throw std::invalid_argument("invalid integer: " + value);
   }
@@ -445,9 +443,9 @@ class NDArray {
     std::stable_sort(
         permutation.begin(), permutation.end(), [this](int lhs, int rhs) {
           const auto lhs_stride =
-              std::abs(static_cast<long long>(strides_[lhs]));
+              std::abs(static_cast<std::intmax_t>(strides_[lhs]));
           const auto rhs_stride =
-              std::abs(static_cast<long long>(strides_[rhs]));
+              std::abs(static_cast<std::intmax_t>(strides_[rhs]));
           return lhs_stride > rhs_stride;
         });
     return TransposeView(permutation);
@@ -1222,15 +1220,14 @@ class NDArray {
       throw std::invalid_argument("broadcast rank mismatch");
     }
 
-    Shape result_shape(shape_.size());
+    Shape result_shape = shape_;
     for (std::size_t axis = 0; axis < shape_.size(); ++axis) {
       if (shape_[axis] == other.shape_[axis]) {
-        result_shape[axis] = shape_[axis];
-      } else if (shape_[axis] == 1 || strides_[axis] == 0) {
+        continue;
+      }
+      if (shape_[axis] == 1 || strides_[axis] == 0) {
         result_shape[axis] = other.shape_[axis];
-      } else if (other.shape_[axis] == 1 || other.strides_[axis] == 0) {
-        result_shape[axis] = shape_[axis];
-      } else {
+      } else if (other.shape_[axis] != 1 && other.strides_[axis] != 0) {
         throw std::invalid_argument("incompatible broadcast dimensions");
       }
     }
@@ -1277,7 +1274,7 @@ class NDArray {
       throw std::invalid_argument("einsum operand count does not match arrays");
     }
 
-    constexpr int kEllipsisBase = 256;
+    static constexpr int kEllipsisBase = 256;
     std::optional<int> ellipsis_rank;
     const auto explicit_label_count = [](std::string_view token) {
       int count = 0;

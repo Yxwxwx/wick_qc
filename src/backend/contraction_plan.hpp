@@ -66,6 +66,7 @@ inline ContractionPlan PlanContraction(
   }
 
   std::vector<std::pair<int, int>> batches;
+  batches.reserve(lhs_batch.size());
   for (std::size_t i = 0; i < lhs_batch.size(); ++i) {
     batches.emplace_back(lhs_batch[i], rhs_batch[i]);
   }

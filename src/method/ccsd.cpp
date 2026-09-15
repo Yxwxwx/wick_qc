@@ -1,8 +1,13 @@
 #include "method/ccsd.h"
 
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
 #include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace wickqc::method {
 

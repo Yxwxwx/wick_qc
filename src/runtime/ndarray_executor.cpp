@@ -1,14 +1,23 @@
 #include "runtime/ndarray_executor.h"
 
+#include "backend/ndarray.hpp"
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "runtime/tensor_binding.h"
+#include "symbolic/wick.h"
 
 #include <algorithm>
 #include <complex>
+#include <cstddef>
+#include <exception>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace wickqc::runtime {
 namespace {
@@ -31,22 +40,6 @@ std::vector<int> Labels(const std::vector<einsum::IndexId>& indices) {
   return result;
 }
 } // namespace
-
-std::vector<std::size_t> TensorBinding::Shape(
-    const Dimensions& dimensions) const {
-  std::vector<std::size_t> shape;
-  for (const auto domain : domains) {
-    const auto found = dimensions.find(domain);
-    if (found == dimensions.end()) {
-      throw std::invalid_argument(
-          "Missing dimension for tensor '" + name + "', orbital mask " +
-          std::to_string(domain.orbital_spaces) + ", spin mask " +
-          std::to_string(domain.spins));
-    }
-    shape.push_back(found->second);
-  }
-  return shape;
-}
 
 NdArrayExecutor NdArrayExecutor::Compile(
     const equation::ContractionGraph& graph) {

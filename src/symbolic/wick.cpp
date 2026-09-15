@@ -27,6 +27,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include "symbolic/index_domain.h"
 
 namespace wickqc::symbolic {
 namespace {
@@ -1679,14 +1680,6 @@ std::string DisplayIndex(const Index& index) {
 
 } // namespace
 
-std::strong_ordering IndexDomain::operator<=>(
-    const IndexDomain& other) const noexcept {
-  const auto packed = static_cast<std::uint8_t>(orbital_spaces | (spins << 4));
-  const auto other_packed =
-      static_cast<std::uint8_t>(other.orbital_spaces | (other.spins << 4));
-  return packed <=> other_packed;
-}
-
 std::strong_ordering Index::operator<=>(const Index& other) const {
   if (const auto domain_order = domain <=> other.domain; domain_order != 0) {
     return domain_order;
@@ -1748,18 +1741,6 @@ std::size_t SignedPermutation::Hash() const noexcept {
     value = 31 * value + axis;
   }
   return value;
-}
-
-bool IndexDomain::IsConcrete() const noexcept {
-  return std::popcount(orbital_spaces) <= 1 && std::popcount(spins) <= 1;
-}
-
-bool IndexDomain::IsCompatibleWith(const IndexDomain& other) const noexcept {
-  const bool orbital_compatible = orbital_spaces == 0 ||
-      other.orbital_spaces == 0 || (orbital_spaces & other.orbital_spaces) != 0;
-  const bool spin_compatible =
-      spins == 0 || other.spins == 0 || (spins & other.spins) != 0;
-  return orbital_compatible && spin_compatible;
 }
 
 void IndexRegistry::Add(OrbitalSpace space, std::string_view names, Spin spin) {

@@ -2,6 +2,7 @@
 
 #include "equation/graph.h"
 #include "method/integral_convention.h"
+#include "symbolic/wick.h"
 
 #include <string>
 #include <string_view>

@@ -1,10 +1,18 @@
 #include "method/spatial_cc.h"
 
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "method/integral_convention.h"
 #include "method/uga_ccsd.h"
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
+#include <cstddef>
 #include <functional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace wickqc::method {
 namespace {

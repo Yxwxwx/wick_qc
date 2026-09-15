@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cstddef>
+
+#if defined(WICKQC_USE_MKL) || defined(WICKQC_USE_OPENBLAS) || \
+    defined(WICKQC_USE_BLIS)
 #include <cassert>
 #include <complex>
-#include <cstddef>
 #include <limits>
 #include <type_traits>
+#endif
 
 #if defined(WICKQC_USE_MKL)
 #include <mkl.h>
@@ -90,17 +94,22 @@ inline void Gemm(
         const T* __restrict__ zb = &xb[xj * nk];
         T* __restrict__ zc = &xc[xi * ldn + xj];
         T t[ki * kj] = {0};
-        for (std::size_t k = 0; k < nk; k++)
+        for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kj
-          for (int j = 0; j < kj; j++)
+          for (int j = 0; j < kj; j++) {
 #pragma unroll ki
-            for (int i = 0; i < ki; i++)
+            for (int i = 0; i < ki; i++) {
               t[j * ki + i] += za[i * nk + k] * zb[j * nk + k];
+            }
+          }
+        }
 #pragma unroll ki
-        for (int i = 0; i < ki; i++)
+        for (int i = 0; i < ki; i++) {
 #pragma unroll kj
-          for (int j = 0; j < kj; j++)
+          for (int j = 0; j < kj; j++) {
             zc[i * ldn + j] = f * t[j * ki + i];
+          }
+        }
       }
     }
     if (kj > kjj && ((nj - xnj) & kjj)) {
@@ -110,17 +119,22 @@ inline void Gemm(
         const T* __restrict__ zb = &xb[xj * nk];
         T* __restrict__ zc = &xc[xi * ldn + xj];
         T t[ki * kjj] = {0};
-        for (std::size_t k = 0; k < nk; k++)
+        for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjj
-          for (int j = 0; j < kjj; j++)
+          for (int j = 0; j < kjj; j++) {
 #pragma unroll ki
-            for (int i = 0; i < ki; i++)
+            for (int i = 0; i < ki; i++) {
               t[j * ki + i] += za[i * nk + k] * zb[j * nk + k];
+            }
+          }
+        }
 #pragma unroll ki
-        for (int i = 0; i < ki; i++)
+        for (int i = 0; i < ki; i++) {
 #pragma unroll kjj
-          for (int j = 0; j < kjj; j++)
+          for (int j = 0; j < kjj; j++) {
             zc[i * ldn + j] = f * t[j * ki + i];
+          }
+        }
       }
       xnj += kjj;
     }
@@ -131,17 +145,22 @@ inline void Gemm(
         const T* __restrict__ zb = &xb[xj * nk];
         T* __restrict__ zc = &xc[xi * ldn + xj];
         T t[ki * kjjj] = {0};
-        for (std::size_t k = 0; k < nk; k++)
+        for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjjj
-          for (int j = 0; j < kjjj; j++)
+          for (int j = 0; j < kjjj; j++) {
 #pragma unroll ki
-            for (int i = 0; i < ki; i++)
+            for (int i = 0; i < ki; i++) {
               t[j * ki + i] += za[i * nk + k] * zb[j * nk + k];
+            }
+          }
+        }
 #pragma unroll ki
-        for (int i = 0; i < ki; i++)
+        for (int i = 0; i < ki; i++) {
 #pragma unroll kjjj
-          for (int j = 0; j < kjjj; j++)
+          for (int j = 0; j < kjjj; j++) {
             zc[i * ldn + j] = f * t[j * ki + i];
+          }
+        }
       }
       xnj += kjjj;
     }
@@ -152,13 +171,16 @@ inline void Gemm(
         const T* __restrict__ zb = &xb[xj * nk];
         T* __restrict__ zc = &xc[xi * ldn + xj];
         T t[ki] = {0};
-        for (std::size_t k = 0; k < nk; k++)
+        for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll ki
-          for (int i = 0; i < ki; i++)
+          for (int i = 0; i < ki; i++) {
             t[0 + i] += za[i * nk + k] * zb[0 * nk + k];
+          }
+        }
 #pragma unroll ki
-        for (int i = 0; i < ki; i++)
+        for (int i = 0; i < ki; i++) {
           zc[i * ldn + 0] = f * t[0 + i];
+        }
       }
       xnj += 1;
     }
@@ -171,17 +193,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kii * kj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kj
-        for (int j = 0; j < kj; j++)
+        for (int j = 0; j < kj; j++) {
 #pragma unroll kii
-          for (int i = 0; i < kii; i++)
+          for (int i = 0; i < kii; i++) {
             t[j * kii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kii
-      for (int i = 0; i < kii; i++)
+      for (int i = 0; i < kii; i++) {
 #pragma unroll kj
-        for (int j = 0; j < kj; j++)
+        for (int j = 0; j < kj; j++) {
           zc[i * ldn + j] = f * t[j * kii + i];
+        }
+      }
     }
     if (kj > kjj && ((nj - xnj) & kjj)) {
       const std::size_t xi = xni;
@@ -190,17 +217,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kii * kjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjj
-        for (int j = 0; j < kjj; j++)
+        for (int j = 0; j < kjj; j++) {
 #pragma unroll kii
-          for (int i = 0; i < kii; i++)
+          for (int i = 0; i < kii; i++) {
             t[j * kii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kii
-      for (int i = 0; i < kii; i++)
+      for (int i = 0; i < kii; i++) {
 #pragma unroll kjj
-        for (int j = 0; j < kjj; j++)
+        for (int j = 0; j < kjj; j++) {
           zc[i * ldn + j] = f * t[j * kii + i];
+        }
+      }
       xnj += kjj;
     }
     if (kj > kjjj && ((nj - xnj) & kjjj)) {
@@ -210,17 +242,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kii * kjjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjjj
-        for (int j = 0; j < kjjj; j++)
+        for (int j = 0; j < kjjj; j++) {
 #pragma unroll kii
-          for (int i = 0; i < kii; i++)
+          for (int i = 0; i < kii; i++) {
             t[j * kii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kii
-      for (int i = 0; i < kii; i++)
+      for (int i = 0; i < kii; i++) {
 #pragma unroll kjjj
-        for (int j = 0; j < kjjj; j++)
+        for (int j = 0; j < kjjj; j++) {
           zc[i * ldn + j] = f * t[j * kii + i];
+        }
+      }
       xnj += kjjj;
     }
     if ((nj - xnj) & 1) {
@@ -230,13 +267,16 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kii] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kii
-        for (int i = 0; i < kii; i++)
+        for (int i = 0; i < kii; i++) {
           t[0 + i] += za[i * nk + k] * zb[0 * nk + k];
+        }
+      }
 #pragma unroll kii
-      for (int i = 0; i < kii; i++)
+      for (int i = 0; i < kii; i++) {
         zc[i * ldn + 0] = f * t[0 + i];
+      }
       xnj += 1;
     }
     xni += kii;
@@ -249,17 +289,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kiii * kj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kj
-        for (int j = 0; j < kj; j++)
+        for (int j = 0; j < kj; j++) {
 #pragma unroll kiii
-          for (int i = 0; i < kiii; i++)
+          for (int i = 0; i < kiii; i++) {
             t[j * kiii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kiii
-      for (int i = 0; i < kiii; i++)
+      for (int i = 0; i < kiii; i++) {
 #pragma unroll kj
-        for (int j = 0; j < kj; j++)
+        for (int j = 0; j < kj; j++) {
           zc[i * ldn + j] = f * t[j * kiii + i];
+        }
+      }
     }
     if (kj > kjj && ((nj - xnj) & kjj)) {
       const std::size_t xi = xni;
@@ -268,17 +313,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kiii * kjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjj
-        for (int j = 0; j < kjj; j++)
+        for (int j = 0; j < kjj; j++) {
 #pragma unroll kiii
-          for (int i = 0; i < kiii; i++)
+          for (int i = 0; i < kiii; i++) {
             t[j * kiii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kiii
-      for (int i = 0; i < kiii; i++)
+      for (int i = 0; i < kiii; i++) {
 #pragma unroll kjj
-        for (int j = 0; j < kjj; j++)
+        for (int j = 0; j < kjj; j++) {
           zc[i * ldn + j] = f * t[j * kiii + i];
+        }
+      }
       xnj += kjj;
     }
     if (kj > kjjj && ((nj - xnj) & kjjj)) {
@@ -288,17 +338,22 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kiii * kjjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjjj
-        for (int j = 0; j < kjjj; j++)
+        for (int j = 0; j < kjjj; j++) {
 #pragma unroll kiii
-          for (int i = 0; i < kiii; i++)
+          for (int i = 0; i < kiii; i++) {
             t[j * kiii + i] += za[i * nk + k] * zb[j * nk + k];
+          }
+        }
+      }
 #pragma unroll kiii
-      for (int i = 0; i < kiii; i++)
+      for (int i = 0; i < kiii; i++) {
 #pragma unroll kjjj
-        for (int j = 0; j < kjjj; j++)
+        for (int j = 0; j < kjjj; j++) {
           zc[i * ldn + j] = f * t[j * kiii + i];
+        }
+      }
       xnj += kjjj;
     }
     if ((nj - xnj) & 1) {
@@ -308,13 +363,16 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[kiii] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kiii
-        for (int i = 0; i < kiii; i++)
+        for (int i = 0; i < kiii; i++) {
           t[0 + i] += za[i * nk + k] * zb[0 * nk + k];
+        }
+      }
 #pragma unroll kiii
-      for (int i = 0; i < kiii; i++)
+      for (int i = 0; i < kiii; i++) {
         zc[i * ldn + 0] = f * t[0 + i];
+      }
       xnj += 1;
     }
     xni += kiii;
@@ -327,13 +385,16 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[1 * kj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kj
-        for (int j = 0; j < kj; j++)
+        for (int j = 0; j < kj; j++) {
           t[j * 1 + 0] += za[0 * nk + k] * zb[j * nk + k];
+        }
+      }
 #pragma unroll kj
-      for (int j = 0; j < kj; j++)
+      for (int j = 0; j < kj; j++) {
         zc[0 * ldn + j] = f * t[j * 1 + 0];
+      }
     }
     if (kj > kjj && ((nj - xnj) & kjj)) {
       const std::size_t xi = xni;
@@ -342,13 +403,16 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[1 * kjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjj
-        for (int j = 0; j < kjj; j++)
+        for (int j = 0; j < kjj; j++) {
           t[j * 1 + 0] += za[0 * nk + k] * zb[j * nk + k];
+        }
+      }
 #pragma unroll kjj
-      for (int j = 0; j < kjj; j++)
+      for (int j = 0; j < kjj; j++) {
         zc[0 * ldn + j] = f * t[j * 1 + 0];
+      }
       xnj += kjj;
     }
     if (kj > kjjj && ((nj - xnj) & kjjj)) {
@@ -358,13 +422,16 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[1 * kjjj] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
 #pragma unroll kjjj
-        for (int j = 0; j < kjjj; j++)
+        for (int j = 0; j < kjjj; j++) {
           t[j * 1 + 0] += za[0 * nk + k] * zb[j * nk + k];
+        }
+      }
 #pragma unroll kjjj
-      for (int j = 0; j < kjjj; j++)
+      for (int j = 0; j < kjjj; j++) {
         zc[0 * ldn + j] = f * t[j * 1 + 0];
+      }
       xnj += kjjj;
     }
     if ((nj - xnj) & 1) {
@@ -374,8 +441,9 @@ inline void Gemm(
       const T* __restrict__ zb = &xb[xj * nk];
       T* __restrict__ zc = &xc[xi * ldn + xj];
       T t[1] = {0};
-      for (std::size_t k = 0; k < nk; k++)
+      for (std::size_t k = 0; k < nk; k++) {
         t[0 + 0] += za[0 * nk + k] * zb[0 * nk + k];
+      }
       zc[0 * ldn + 0] = f * t[0 + 0];
       xnj += 1;
     }

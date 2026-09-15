@@ -1,11 +1,19 @@
 #include "method/ic_nevpt2.h"
 
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace wickqc::method {
 namespace {

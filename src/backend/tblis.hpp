@@ -1,6 +1,7 @@
 #pragma once
 
-#include <tblis.h>
+#include <tblis/frame/3t/mult.h>
+#include <tblis/frame/base/basic_types.h>
 
 #include <complex>
 #include <cstddef>

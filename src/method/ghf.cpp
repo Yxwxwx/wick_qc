@@ -1,10 +1,17 @@
 #include "method/ghf.h"
 
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
 #include <algorithm>
 #include <array>
-#include <set>
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace wickqc::method {
 using symbolic::Expression;

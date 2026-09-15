@@ -3,13 +3,19 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <numeric>
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
 namespace wickqc::equation {
 namespace {

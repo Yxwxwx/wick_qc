@@ -1,9 +1,17 @@
 #include "method/uga_ccsd.h"
 
 #include "einsum/einsum.h"
+#include "equation/equation.h"
+#include "method/integral_convention.h"
+#include "symbolic/index_domain.h"
+#include "symbolic/wick.h"
 
 #include <array>
+#include <map>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace wickqc::method {

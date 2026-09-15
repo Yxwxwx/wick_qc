@@ -1,6 +1,7 @@
 #include "method/ccsd.h"
 #include "method/ghf.h"
 #include "method/ic_nevpt2.h"
+#include "method/integral_convention.h"
 #include "method/sc_nevpt2.h"
 #include "method/spatial_cc.h"
 #include "method/spatial_mp.h"
@@ -10,12 +11,13 @@
 #include <exception>
 #include <iostream>
 #include <string_view>
+#include <system_error>
 
 int main(int argc, char** argv) {
   if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--help")) {
     std::cout << "Usage: wick_qc {ghf|ccsd|uga-ccsd|ic-nevpt2}\n"
                  "       wick_qc sc-nevpt2 [--optimize]\n"
-                 "       wick_qc spatial-mp {2|3|4} [--optimize] [--chemist]\n"
+                 "       wick_qc spatial-mp ORDER [--optimize] [--chemist]\n"
                  "       wick_qc spatial-cc {2|3|4} [--optimize] [--chemist]\n"
                  "Write the method's NumPy tensor equations to stdout.\n";
     return 0;

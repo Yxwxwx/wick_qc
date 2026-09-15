@@ -1,6 +1,7 @@
 #pragma once
 
 #include "equation/graph.h"
+#include "symbolic/wick.h"
 
 #include <string>
 #include <string_view>

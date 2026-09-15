@@ -1,17 +1,23 @@
 #include "einsum/einsum.h"
 
+#include "equation/equation.h"
 #include "equation/graph.h"
+#include "symbolic/wick.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
 #include <iomanip>
 #include <map>
 #include <numeric>
+#include <ostream>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace wickqc::einsum {
 namespace {

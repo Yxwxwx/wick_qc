@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 #include "equation/equation.h"
+#include "symbolic/index_domain.h"
 #include "symbolic/wick.h"
 
 namespace wickqc::einsum {

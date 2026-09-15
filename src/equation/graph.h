@@ -1,5 +1,6 @@
 #pragma once
 
+#include "symbolic/index_domain.h"
 #include "symbolic/wick.h"
 
 #include <map>

@@ -1,9 +1,15 @@
+#include "backend/ndarray.hpp"
 #include "method/spatial_mp.h"
 #include "runtime/ndarray_executor.h"
+#include "runtime/tensor_binding.h"
 
 #include <cmath>
+#include <cstddef>
+#include <exception>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 // A small canonical RHF model with pair-symmetric spatial integrals. The
 // first-order amplitudes are known from orbital-energy denominators, so both

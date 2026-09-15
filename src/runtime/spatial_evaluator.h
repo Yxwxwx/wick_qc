@@ -29,7 +29,7 @@ class SpatialEvaluator {
                                                          const Dimensions& dimensions) const;
 
  private:
-  std::variant<const NumericKernel*, NdArrayExecutor> implementation_;
+  std::variant<const NumericKernel*, NDArrayExecutor> implementation_;
 };
 
 } // namespace wickqc::runtime

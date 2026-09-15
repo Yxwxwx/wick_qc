@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace wickqc::codegen {
-class CppEmitter;
+class CPPEmitter;
 }
 
 namespace wickqc::runtime {
@@ -18,9 +18,9 @@ namespace wickqc::runtime {
 // Evaluation performs no symbolic algebra or string einsum parsing. Each call
 // owns its outputs and intermediates; caller inputs (including views) stay intact.
 // double and complex<double> are supported by every GEMM backend.
-class NdArrayExecutor {
+class NDArrayExecutor {
  public:
-  [[nodiscard]] static NdArrayExecutor Compile(const equation::ContractionGraph& graph);
+  [[nodiscard]] static NDArrayExecutor Compile(const equation::ContractionGraph& graph);
   [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept;
   [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept;
 
@@ -28,7 +28,7 @@ class NdArrayExecutor {
   [[nodiscard]] TensorMap<T> Evaluate(const TensorMap<T>& inputs, const Dimensions& dimensions) const;
 
  private:
-  friend class codegen::CppEmitter;
+  friend class codegen::CPPEmitter;
   enum class Source : std::uint8_t { kInput, kValue, kOnes, kDelta };
   struct Input {
     TensorBinding binding;
@@ -55,8 +55,8 @@ class NdArrayExecutor {
   std::vector<Assignment> assignments_;
 };
 
-extern template TensorMap<double> NdArrayExecutor::Evaluate(const TensorMap<double>&, const Dimensions&) const;
-extern template TensorMap<std::complex<double>> NdArrayExecutor::Evaluate(const TensorMap<std::complex<double>>&,
+extern template TensorMap<double> NDArrayExecutor::Evaluate(const TensorMap<double>&, const Dimensions&) const;
+extern template TensorMap<std::complex<double>> NDArrayExecutor::Evaluate(const TensorMap<std::complex<double>>&,
                                                                           const Dimensions&) const;
 
 } // namespace wickqc::runtime

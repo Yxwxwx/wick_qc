@@ -17,7 +17,7 @@ namespace wickqc::method {
 using symbolic::Expression;
 using symbolic::OrbitalSpace;
 
-ScNevpt2Generator::ScNevpt2Generator() {
+SCNEVPT2Generator::SCNEVPT2Generator() {
   indices_.Add(OrbitalSpace::kInactive, "mnxyijkl");
   indices_.Add(OrbitalSpace::kActive, "mnxyabcdefghpq");
   indices_.Add(OrbitalSpace::kExternal, "mnxyrstu");
@@ -46,16 +46,16 @@ ScNevpt2Generator::ScNevpt2Generator() {
       {"i", "SUM <abc> w[baic] E1[b,i] E1[a,c]\nSUM <a> h[ai] E1[a,i]"}};
 }
 
-Expression ScNevpt2Generator::Parse(std::string_view text) const {
+Expression SCNEVPT2Generator::Parse(std::string_view text) const {
   return Expression::Parse(text, indices_, symmetries_);
 }
 
-symbolic::Tensor ScNevpt2Generator::ParseTensor(std::string_view text) const {
+symbolic::Tensor SCNEVPT2Generator::ParseTensor(std::string_view text) const {
   return symbolic::Tensor::Parse(text, indices_, symmetries_);
 }
 
 std::vector<std::pair<std::string, equation::ContractionGraph>>
-ScNevpt2Generator::Equations(bool sum_outer) const {
+SCNEVPT2Generator::Equations(bool sum_outer) const {
   const std::map<std::string, std::pair<symbolic::Tensor, Expression>>
       definitions = {
           {"gamma", {ParseTensor("gamma[mn]"), Parse("1\n-0.5 delta[mn]")}}};
@@ -85,7 +85,7 @@ ScNevpt2Generator::Equations(bool sum_outer) const {
   return blocks;
 }
 
-std::string ScNevpt2Generator::GenerateNumpy(bool optimize) const {
+std::string SCNEVPT2Generator::GenerateNumpy(bool optimize) const {
   std::ostringstream functions;
   for (const auto& [name, equations] : Equations()) {
     const auto& output = equations.Nodes().front().output;

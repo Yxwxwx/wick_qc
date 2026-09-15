@@ -15,11 +15,12 @@
 
 int main(int argc, char** argv) {
   if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--help")) {
-    std::cout << "Usage: wick_qc {ghf|ccsd|uga-ccsd|ic-nevpt2}\n"
-                 "       wick_qc sc-nevpt2 [--optimize]\n"
-                 "       wick_qc spatial-mp ORDER [--optimize] [--chemist]\n"
-                 "       wick_qc spatial-cc {2|3|4} [--optimize] [--chemist]\n"
-                 "Write the method's NumPy tensor equations to stdout.\n";
+    std::cout
+        << "Usage: example_einsum {ghf|ccsd|spin-orbital-ccsd|uga-ccsd|ic-nevpt2|fic-nevpt2}\n"
+           "       example_einsum sc-nevpt2 [--optimize]\n"
+           "       example_einsum spatial-mp ORDER [--optimize] [--chemist]\n"
+           "       example_einsum spatial-cc {2|3|4} [--optimize] [--chemist]\n"
+           "Write the method's NumPy tensor equations to stdout.\n";
     return 0;
   }
   try {
@@ -56,9 +57,9 @@ int main(int argc, char** argv) {
       }
       std::cout
           << (method == "spatial-mp"
-                  ? wickqc::method::SpatialMpGenerator(order, convention)
+                  ? wickqc::method::SpatialMPGenerator(order, convention)
                         .GenerateNumpy(optimize)
-                  : wickqc::method::SpatialCcGenerator(order, convention)
+                  : wickqc::method::SpatialCCGenerator(order, convention)
                         .GenerateNumpy(optimize));
       return 0;
     }
@@ -68,7 +69,7 @@ int main(int argc, char** argv) {
         std::cerr << "SC-NEVPT2 accepts only optional --optimize\n";
         return 2;
       }
-      std::cout << wickqc::method::ScNevpt2Generator().GenerateNumpy(argc == 3);
+      std::cout << wickqc::method::SCNEVPT2Generator().GenerateNumpy(argc == 3);
       return 0;
     }
     if (argc != 2) {
@@ -76,13 +77,17 @@ int main(int argc, char** argv) {
       return 2;
     }
     if (method == "ghf") {
-      std::cout << wickqc::method::GhfGenerator().GenerateNumpy();
+      std::cout << wickqc::method::GHFGenerator().GenerateNumpy();
     } else if (method == "ccsd") {
-      std::cout << wickqc::method::CcsdGenerator().GenerateNumpy();
+      std::cout << wickqc::method::SpatialCCGenerator(
+                       2, wickqc::method::IntegralConvention::kChemist)
+                       .GenerateNumpy();
+    } else if (method == "spin-orbital-ccsd") {
+      std::cout << wickqc::method::CCSDGenerator().GenerateNumpy();
     } else if (method == "uga-ccsd") {
-      std::cout << wickqc::method::UgaCcsdGenerator().GenerateNumpy();
-    } else if (method == "ic-nevpt2") {
-      std::cout << wickqc::method::IcNevpt2Generator().GenerateNumpy();
+      std::cout << wickqc::method::UGACCSDGenerator().GenerateNumpy();
+    } else if ((method == "ic-nevpt2" || method == "fic-nevpt2")) {
+      std::cout << wickqc::method::ICNEVPT2Generator().GenerateNumpy();
     } else {
       std::cerr << "Unknown method: " << method << '\n';
       return 2;

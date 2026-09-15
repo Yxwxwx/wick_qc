@@ -79,7 +79,8 @@ When an established local style exists in the repository, preserve local consist
 
 General conventions:
 
-- types and classes use `PascalCase`;
+- types and classes use `PascalCase`, preserving established acronyms (for example
+  `CCSDGenerator`, `ICNEVPT2Generator`, `RHFData`, and `NDArrayExecutor`);
 - constants use `kConstantName`;
 - private data members use a trailing underscore;
 - names should describe intent rather than implementation details;
@@ -131,8 +132,9 @@ src/
     reference.h
     reference.cpp
 
-tests/
-tools/
+unit_test/  # focused C++ unit tests
+example/    # API usage and build-time code generation
+test/       # Python numerical comparisons against PySCF
 benchmarks/
 docs/
 ```

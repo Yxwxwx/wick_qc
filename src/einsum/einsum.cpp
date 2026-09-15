@@ -265,12 +265,12 @@ Term LowerTerm(
   result.coefficient = source.coefficient;
   result.output = source.output.name;
   result.index_labels.assign(used_labels.begin(), used_labels.end());
-  std::map<std::string, IndexId> ids;
-  for (IndexId id = 0; id < result.index_labels.size(); ++id) {
+  std::map<std::string, IndexID> ids;
+  for (IndexID id = 0; id < result.index_labels.size(); ++id) {
     ids.emplace(result.index_labels[id], id);
   }
   auto index_ids = [&](const std::vector<Index>& indices) {
-    std::vector<IndexId> result;
+    std::vector<IndexID> result;
     result.reserve(indices.size());
     for (const auto& index : indices) {
       result.push_back(ids.at(labels.at(Identity(index))));
@@ -278,7 +278,7 @@ Term LowerTerm(
     return result;
   };
   result.output_indices = index_ids(source.output.indices);
-  std::set<IndexId> input_labels;
+  std::set<IndexID> input_labels;
   for (const auto& tensor : source.inputs) {
     auto indices = index_ids(tensor.indices);
     input_labels.insert(indices.begin(), indices.end());
@@ -324,7 +324,7 @@ std::string FormatCoefficient(double coefficient, int precision) {
 }
 
 std::string JoinIndices(
-    const std::vector<IndexId>& indices,
+    const std::vector<IndexID>& indices,
     const std::vector<std::string>& labels) {
   std::string result;
   for (const auto& index : indices) {
@@ -356,7 +356,7 @@ Program Program::Lower(
   return Program(std::move(terms));
 }
 
-std::string RenderNumpy(const Program& program, const NumpyOptions& options) {
+std::string RenderNumpy(const Program& program, const NumPyOptions& options) {
   for (const auto& term : program.Terms()) {
     for (const auto& label : term.index_labels) {
       if (label.size() != 1 ||

@@ -9,9 +9,9 @@ namespace wickqc::method {
 
 // Spin-orbital CCSD, with a normal-ordered Hamiltonian and factorial BCH
 // weights.
-class CcsdGenerator {
+class CCSDGenerator {
  public:
-  explicit CcsdGenerator(bool antisymmetrized_integrals = true);
+  explicit CCSDGenerator(bool antisymmetrized_integrals = true);
 
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;
   [[nodiscard]] symbolic::Expression Energy(int order = 2) const;

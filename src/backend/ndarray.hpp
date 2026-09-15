@@ -819,11 +819,11 @@ class NDArray {
 #if defined(WICKQC_USE_TBLIS)
     backend::TblisContract(
         a.data_,
-        backend::TblisMetadata(a.shape_, a.strides_, plan.lhs_indices),
+        backend::TBLISMetadata(a.shape_, a.strides_, plan.lhs_indices),
         b.data_,
-        backend::TblisMetadata(b.shape_, b.strides_, plan.rhs_indices),
+        backend::TBLISMetadata(b.shape_, b.strides_, plan.rhs_indices),
         output.data_,
-        backend::TblisMetadata(
+        backend::TBLISMetadata(
             output.shape_, output.strides_, plan.output_indices),
         alpha,
         beta);

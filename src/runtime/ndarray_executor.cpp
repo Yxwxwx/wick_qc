@@ -29,10 +29,10 @@ TensorBinding Binding(const std::string& name, const symbolic::Tensor& tensor) {
   return result;
 }
 
-std::vector<int> Labels(const std::vector<einsum::IndexId>& indices) {
+std::vector<int> Labels(const std::vector<einsum::IndexID>& indices) {
   std::vector<int> result;
   for (const auto id : indices) {
-    if (id > static_cast<einsum::IndexId>(std::numeric_limits<int>::max())) {
+    if (id > static_cast<einsum::IndexID>(std::numeric_limits<int>::max())) {
       throw std::invalid_argument("NDArray index identifier exceeds int range");
     }
     result.push_back(static_cast<int>(id));
@@ -41,9 +41,9 @@ std::vector<int> Labels(const std::vector<einsum::IndexId>& indices) {
 }
 } // namespace
 
-NdArrayExecutor NdArrayExecutor::Compile(
+NDArrayExecutor NDArrayExecutor::Compile(
     const equation::ContractionGraph& graph) {
-  NdArrayExecutor result;
+  NDArrayExecutor result;
   std::map<std::string, TensorBinding> definitions;
   for (const auto& node : graph.Nodes()) {
     if (node.output.kind != symbolic::TensorKind::kGeneric) {
@@ -221,15 +221,15 @@ NdArrayExecutor NdArrayExecutor::Compile(
   return result;
 }
 
-const std::vector<TensorBinding>& NdArrayExecutor::Inputs() const noexcept {
+const std::vector<TensorBinding>& NDArrayExecutor::Inputs() const noexcept {
   return inputs_;
 }
-const std::vector<TensorBinding>& NdArrayExecutor::Outputs() const noexcept {
+const std::vector<TensorBinding>& NDArrayExecutor::Outputs() const noexcept {
   return outputs_;
 }
 
 template <typename T>
-TensorMap<T> NdArrayExecutor::Evaluate(
+TensorMap<T> NDArrayExecutor::Evaluate(
     const TensorMap<T>& inputs,
     const Dimensions& dimensions) const {
   using Array = NDArray<T>;
@@ -299,10 +299,10 @@ TensorMap<T> NdArrayExecutor::Evaluate(
   return values;
 }
 
-template TensorMap<double> NdArrayExecutor::Evaluate(
+template TensorMap<double> NDArrayExecutor::Evaluate(
     const TensorMap<double>&,
     const Dimensions&) const;
-template TensorMap<std::complex<double>> NdArrayExecutor::Evaluate(
+template TensorMap<std::complex<double>> NDArrayExecutor::Evaluate(
     const TensorMap<std::complex<double>>&,
     const Dimensions&) const;
 

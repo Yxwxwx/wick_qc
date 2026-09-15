@@ -47,7 +47,7 @@ std::string Excitations(int rank, bool bra) {
 }
 } // namespace
 
-SpatialMpGenerator::SpatialMpGenerator(
+SpatialMPGenerator::SpatialMPGenerator(
     int order,
     IntegralConvention convention,
     int maximum_excitation_rank)
@@ -80,23 +80,23 @@ SpatialMpGenerator::SpatialMpGenerator(
   const auto canonical_fock = std::pair(
       symbolic::Tensor::Parse("f[pq]", indices_, symmetries_),
       Parse("delta[pq] eps[p]"));
-  const auto hamiltonian = UgaCcsdGenerator(convention)
+  const auto hamiltonian = UGACCSDGenerator(convention)
                                .Hamiltonian()
                                .Substitute({{"f", canonical_fock}});
   perturbation_ = (hamiltonian - fock_).Simplify();
 }
 
-symbolic::Expression SpatialMpGenerator::Parse(std::string_view text) const {
+symbolic::Expression SpatialMPGenerator::Parse(std::string_view text) const {
   return symbolic::Expression::Parse(text, indices_, symmetries_);
 }
 
-int SpatialMpGenerator::WavefunctionRank(int order) const {
+int SpatialMPGenerator::WavefunctionRank(int order) const {
   return maximum_excitation_rank_ == 0
       ? 2 * order
       : std::min(2 * order, maximum_excitation_rank_);
 }
 
-symbolic::Expression SpatialMpGenerator::Wavefunction(int order, int rank)
+symbolic::Expression SpatialMPGenerator::Wavefunction(int order, int rank)
     const {
   if (rank > WavefunctionRank(order)) {
     return {};
@@ -113,7 +113,7 @@ symbolic::Expression SpatialMpGenerator::Wavefunction(int order, int rank)
             Axes(rank) + "]" + Excitations(rank, false));
 }
 
-equation::ContractionGraph SpatialMpGenerator::Equations() const {
+equation::ContractionGraph SpatialMPGenerator::Equations() const {
   equation::ContractionGraph graph;
   auto add = [&](const std::string& output, const symbolic::Expression& value) {
     graph.Add(
@@ -229,7 +229,7 @@ equation::ContractionGraph SpatialMpGenerator::Equations() const {
   return graph;
 }
 
-std::string SpatialMpGenerator::GenerateNumpy(bool optimize) const {
+std::string SpatialMPGenerator::GenerateNumpy(bool optimize) const {
   const auto graph = Equations();
   if (optimize) {
     return einsum::RenderNumpy(graph.Simplify());

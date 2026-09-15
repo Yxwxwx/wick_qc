@@ -14,19 +14,19 @@ class ContractionGraph;
 
 namespace wickqc::einsum {
 
-using IndexId = std::uint32_t;
+using IndexID = std::uint32_t;
 
 struct Operand {
   std::string variable;
-  std::vector<IndexId> indices;
+  std::vector<IndexID> indices;
 };
 
 struct Term {
   double coefficient = 1.0;
   std::string output;
-  std::vector<IndexId> output_indices;
+  std::vector<IndexID> output_indices;
   std::vector<Operand> operands;
-  // Text labels are rendering metadata. Contractions refer only to IndexId.
+  // Text labels are rendering metadata. Contractions refer only to IndexID.
   std::vector<std::string> index_labels;
   bool broadcasts_output = false;
 };
@@ -42,7 +42,7 @@ struct LoweringOptions {
   bool numeric_indices_only = false;
 };
 
-struct NumpyOptions {
+struct NumPyOptions {
   bool initialize = false;
   std::string intermediate_prefix;
   bool separate_constants = true;
@@ -61,7 +61,7 @@ class Program {
   std::vector<Term> terms_;
 };
 
-[[nodiscard]] std::string RenderNumpy(const Program& program, const NumpyOptions& options = {});
+[[nodiscard]] std::string RenderNumpy(const Program& program, const NumPyOptions& options = {});
 [[nodiscard]] std::string RenderNumpy(const equation::ContractionGraph& graph, int coefficient_precision = 6);
 // Indent every line, including a final empty line, as in the reference emitter.
 [[nodiscard]] std::string AddIndent(std::string_view text, std::size_t spaces = 4);

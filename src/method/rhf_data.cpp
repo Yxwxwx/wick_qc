@@ -8,7 +8,7 @@
 #include "runtime/tensor_binding.h"
 
 namespace wickqc::method {
-runtime::Dimensions RhfData::Dimensions() const {
+runtime::Dimensions RHFData::Dimensions() const {
   if (orbital_energies.Rank() != 1 || occupied == 0 ||
       occupied >= orbital_energies.Size()) {
     throw std::invalid_argument(
@@ -23,7 +23,7 @@ runtime::Dimensions RhfData::Dimensions() const {
   return {{{1, 0}, occupied}, {{8, 0}, nmo - occupied}};
 }
 
-runtime::TensorMap<double> RhfData::Bind(
+runtime::TensorMap<double> RHFData::Bind(
     std::span<const runtime::TensorBinding> bindings,
     const runtime::TensorMap<double>& amplitudes,
     IntegralConvention convention) const {

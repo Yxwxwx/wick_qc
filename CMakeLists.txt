@@ -34,7 +34,7 @@ target_link_libraries(wickqc_runtime PUBLIC wickqc_symbolic wickqc_numeric)
 
 add_library(wickqc_codegen src/codegen/cpp_emitter.cpp)
 target_link_libraries(wickqc_codegen PUBLIC wickqc_runtime)
-add_executable(generate_cpp tools/generate_cpp.cpp)
+add_executable(generate_cpp src/codegen/main.cpp)
 target_link_libraries(generate_cpp PRIVATE wickqc_codegen)
 include(cmake/PrecompileMethods.cmake)
 
@@ -44,17 +44,12 @@ target_link_libraries(wickqc_methods PUBLIC wickqc_runtime wickqc_precompiled)
 add_library(wickqc_rhf src/method/rhf_data.cpp)
 target_link_libraries(wickqc_rhf PUBLIC wickqc_numeric)
 
-add_executable(evaluate_mp2 tools/evaluate_mp2.cpp)
-target_link_libraries(evaluate_mp2 PRIVATE wickqc_runtime)
+option(WICKQC_BUILD_EXAMPLES "Build API and code-generation examples" ON)
+if(WICKQC_BUILD_EXAMPLES)
+  add_subdirectory(example)
+endif()
 
-add_executable(wick_qc src/main.cpp)
-target_link_libraries(wick_qc PRIVATE wickqc_symbolic)
-
-add_executable(generate_ic_nevpt2 tools/generate_ic_nevpt2.cpp)
-target_link_libraries(generate_ic_nevpt2 PRIVATE wickqc_symbolic)
-
-add_executable(generate_ccsd tools/generate_ccsd.cpp)
-target_link_libraries(generate_ccsd PRIVATE wickqc_symbolic)
-
-add_executable(generate_ghf tools/generate_ghf.cpp)
-target_link_libraries(generate_ghf PRIVATE wickqc_symbolic)
+include(CTest)
+if(BUILD_TESTING)
+  add_subdirectory(unit_test)
+endif()

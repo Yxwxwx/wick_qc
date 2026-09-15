@@ -11,9 +11,9 @@
 namespace wickqc::method {
 
 // Strongly contracted, spin-free spatial NEVPT2 in its eight outer subspaces.
-class ScNevpt2Generator {
+class SCNEVPT2Generator {
  public:
-  ScNevpt2Generator();
+  SCNEVPT2Generator();
 
   [[nodiscard]] std::vector<std::pair<std::string, equation::ContractionGraph>> Equations(bool sum_outer = false) const;
   [[nodiscard]] std::string GenerateNumpy(bool optimize = false) const;

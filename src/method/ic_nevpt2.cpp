@@ -96,7 +96,7 @@ SubspaceNames AnalyzeSubspace(std::string_view tagged_name) {
 
 } // namespace
 
-IcNevpt2Generator::IcNevpt2Generator() {
+ICNEVPT2Generator::ICNEVPT2Generator() {
   indices_.Add(OrbitalSpace::kInactive, "mnxyijkl");
   indices_.Add(OrbitalSpace::kActive, "mnxyabcdefghpq");
   indices_.Add(OrbitalSpace::kExternal, "mnxyrstu");
@@ -128,15 +128,15 @@ IcNevpt2Generator::IcNevpt2Generator() {
   };
 }
 
-symbolic::Expression IcNevpt2Generator::Parse(std::string_view text) const {
+symbolic::Expression ICNEVPT2Generator::Parse(std::string_view text) const {
   return symbolic::Expression::Parse(text, indices_, symmetries_);
 }
 
-symbolic::Tensor IcNevpt2Generator::ParseTensor(std::string_view text) const {
+symbolic::Tensor ICNEVPT2Generator::ParseTensor(std::string_view text) const {
   return symbolic::Tensor::Parse(text, indices_, symmetries_);
 }
 
-symbolic::Expression IcNevpt2Generator::BuildCommutator(
+symbolic::Expression ICNEVPT2Generator::BuildCommutator(
     std::string_view bra,
     std::string_view ket) const {
   const auto expanded_bra = Parse(bra).Expand().Simplify();
@@ -151,7 +151,7 @@ symbolic::Expression IcNevpt2Generator::BuildCommutator(
       .Simplify();
 }
 
-symbolic::Expression IcNevpt2Generator::BuildRhs(
+symbolic::Expression ICNEVPT2Generator::BuildRhs(
     std::string_view bra,
     std::string_view ket) const {
   const auto expanded_bra = Parse(bra).Expand().Simplify();
@@ -164,7 +164,7 @@ symbolic::Expression IcNevpt2Generator::BuildRhs(
       .Simplify();
 }
 
-std::string IcNevpt2Generator::RenderEquation(
+std::string ICNEVPT2Generator::RenderEquation(
     const symbolic::Expression& expression,
     const symbolic::Tensor& output) const {
   const auto equation =
@@ -172,7 +172,7 @@ std::string IcNevpt2Generator::RenderEquation(
   return einsum::RenderNumpy(einsum::Program::Lower(equation));
 }
 
-std::string IcNevpt2Generator::Allocate(const symbolic::Tensor& tensor) {
+std::string ICNEVPT2Generator::Allocate(const symbolic::Tensor& tensor) {
   std::ostringstream output;
   output << tensor.name << " = np.zeros((";
   for (const auto& index : tensor.indices) {
@@ -182,7 +182,7 @@ std::string IcNevpt2Generator::Allocate(const symbolic::Tensor& tensor) {
   return output.str();
 }
 
-std::string IcNevpt2Generator::Restrict(
+std::string ICNEVPT2Generator::Restrict(
     const symbolic::Tensor& tensor,
     bool restrict_active,
     bool strict) {
@@ -231,7 +231,7 @@ std::string IcNevpt2Generator::Restrict(
   return dimensions.str() + restrictions.str();
 }
 
-std::string IcNevpt2Generator::Indent(std::string_view text) {
+std::string ICNEVPT2Generator::Indent(std::string_view text) {
   std::ostringstream output;
   std::size_t begin = 0;
   while (begin <= text.size()) {
@@ -248,7 +248,7 @@ std::string IcNevpt2Generator::Indent(std::string_view text) {
 }
 
 std::vector<std::pair<std::string, equation::ContractionGraph>>
-IcNevpt2Generator::Equations() const {
+ICNEVPT2Generator::Equations() const {
   std::vector<std::pair<std::string, equation::ContractionGraph>> blocks;
   for (std::size_t position = 0; position < subspaces_.size(); ++position) {
     const auto& [key, ket] = subspaces_[position];
@@ -280,7 +280,7 @@ IcNevpt2Generator::Equations() const {
   return blocks;
 }
 
-std::string IcNevpt2Generator::GenerateNumpy() const {
+std::string ICNEVPT2Generator::GenerateNumpy() const {
   std::ostringstream functions;
   for (std::size_t position = 0; position < subspaces_.size(); ++position) {
     const auto& [tagged_name, ket] = subspaces_[position];

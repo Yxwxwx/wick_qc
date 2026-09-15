@@ -28,7 +28,7 @@ Checks: >
 
 WarningsAsErrors: '*'
 
-HeaderFilterRegex: '(^|.*/)(src|tools)/.*'
+HeaderFilterRegex: '(^|.*/)(src|unit_test|example)/.*'
 # The supplied block2 implementation is a reference-only dependency.
 ExcludeHeaderFilterRegex: '(^|.*/)((build|third_party|external|vendor)/.*|docs/wick\.hpp)'
 

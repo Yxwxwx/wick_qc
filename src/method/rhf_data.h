@@ -11,7 +11,7 @@ namespace wickqc::method {
 
 // Closed-shell canonical spatial MO data, occupied orbitals first. All arrays
 // have runtime sizes. v[p,q,r,s]=(pq|rs); f is the MO Fock matrix, not h_core.
-struct RhfData {
+struct RHFData {
   std::size_t occupied = 0;
   NDArray<double> orbital_energies;
   NDArray<double> fock;

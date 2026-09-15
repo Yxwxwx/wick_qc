@@ -28,7 +28,7 @@ using symbolic::Expression;
 using symbolic::OrbitalSpace;
 using symbolic::TensorSymmetry;
 
-UgaCcsdGenerator::UgaCcsdGenerator(IntegralConvention convention) {
+UGACCSDGenerator::UGACCSDGenerator(IntegralConvention convention) {
   indices_.Add(OrbitalSpace::kInactive, "pqrsijklmno");
   indices_.Add(OrbitalSpace::kExternal, "pqrsabcdefg");
   const bool chemist = convention == IntegralConvention::kChemist;
@@ -60,15 +60,15 @@ UgaCcsdGenerator::UgaCcsdGenerator(IntegralConvention convention) {
   cluster_ = (singles_ + doubles_).Simplify();
 }
 
-Expression UgaCcsdGenerator::Parse(std::string_view text) const {
+Expression UGACCSDGenerator::Parse(std::string_view text) const {
   return Expression::Parse(text, indices_, symmetries_);
 }
 
-const Expression& UgaCcsdGenerator::Hamiltonian() const {
+const Expression& UGACCSDGenerator::Hamiltonian() const {
   return h_;
 }
 
-Expression UgaCcsdGenerator::Energy(int order) const {
+Expression UGACCSDGenerator::Energy(int order) const {
   ValidateOrder(order);
   auto nested = h_;
   auto transformed = h_;
@@ -79,7 +79,7 @@ Expression UgaCcsdGenerator::Energy(int order) const {
   return transformed.Expand(0).Simplify();
 }
 
-Expression UgaCcsdGenerator::Projected(int order, int rank) const {
+Expression UGACCSDGenerator::Projected(int order, int rank) const {
   ValidateOrder(order);
   auto transformed = h_;
   if (order != 0) {
@@ -116,15 +116,15 @@ Expression UgaCcsdGenerator::Projected(int order, int rank) const {
   return (projector * transformed).Expand(0).Simplify();
 }
 
-Expression UgaCcsdGenerator::Singles(int order) const {
+Expression UGACCSDGenerator::Singles(int order) const {
   return Projected(order, 1);
 }
 
-Expression UgaCcsdGenerator::Doubles(int order) const {
+Expression UGACCSDGenerator::Doubles(int order) const {
   return Projected(order, 2);
 }
 
-std::string UgaCcsdGenerator::GenerateNumpy() const {
+std::string UGACCSDGenerator::GenerateNumpy() const {
   auto render = [&](const Expression& expression, std::string_view target) {
     return einsum::RenderNumpy(
         einsum::Program::Lower(

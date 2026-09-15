@@ -8,7 +8,7 @@
 
 namespace wickqc::method {
 
-class GhfGenerator {
+class GHFGenerator {
  public:
   [[nodiscard]] std::vector<std::pair<std::string, symbolic::Expression>> HamiltonianBlocks() const;
   // One coefficient tensor for each block and normal-ordered operator rank.

@@ -11,9 +11,9 @@ namespace wickqc::method {
 
 // Canonical closed-shell MPn with intermediate-normalized wavefunctions. The spin-free projected linear systems retain
 // their overlap metric; these residuals are not denominator-divided updates.
-class SpatialMpGenerator {
+class SpatialMPGenerator {
  public:
-  explicit SpatialMpGenerator(int order = 4,
+  explicit SpatialMPGenerator(int order = 4,
                               IntegralConvention convention = IntegralConvention::kPhysicist,
                               int maximum_excitation_rank = 0);
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;

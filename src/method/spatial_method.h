@@ -6,10 +6,10 @@
 
 namespace wickqc::method {
 
-enum class SpatialFamily : std::uint8_t { kMp, kCc };
+enum class SpatialFamily : std::uint8_t { kMP, kCC };
 
 struct SpatialMethod {
-  SpatialFamily family = SpatialFamily::kMp;
+  SpatialFamily family = SpatialFamily::kMP;
   // Perturbation order for MP; maximum excitation rank for CC.
   int order = 2;
   IntegralConvention convention = IntegralConvention::kChemist;

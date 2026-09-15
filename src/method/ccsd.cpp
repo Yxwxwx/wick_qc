@@ -11,14 +11,14 @@
 
 namespace wickqc::method {
 
-const symbolic::Expression& CcsdGenerator::Hamiltonian() const {
+const symbolic::Expression& CCSDGenerator::Hamiltonian() const {
   return h_;
 }
 using symbolic::Expression;
 using symbolic::OrbitalSpace;
 using symbolic::TensorSymmetry;
 
-CcsdGenerator::CcsdGenerator(bool antisymmetrized_integrals) {
+CCSDGenerator::CCSDGenerator(bool antisymmetrized_integrals) {
   indices_.Add(OrbitalSpace::kInactive, "pqrsijklmno");
   indices_.Add(OrbitalSpace::kExternal, "pqrsabcdefg");
   symmetries_.Add(
@@ -37,11 +37,11 @@ CcsdGenerator::CcsdGenerator(bool antisymmetrized_integrals) {
            .Simplify();
 }
 
-Expression CcsdGenerator::Parse(std::string_view text) const {
+Expression CCSDGenerator::Parse(std::string_view text) const {
   return Expression::Parse(text, indices_, symmetries_);
 }
 
-Expression CcsdGenerator::SimilarityTransform(int order, int rank) const {
+Expression CCSDGenerator::SimilarityTransform(int order, int rank) const {
   if (order < 0 || order > 4) {
     throw std::invalid_argument("CCSD BCH order must be between zero and four");
   }
@@ -57,23 +57,23 @@ Expression CcsdGenerator::SimilarityTransform(int order, int rank) const {
   return result;
 }
 
-Expression CcsdGenerator::Energy(int order) const {
+Expression CCSDGenerator::Energy(int order) const {
   return SimilarityTransform(order, 0).Expand(0).Simplify();
 }
 
-Expression CcsdGenerator::Singles(int order) const {
+Expression CCSDGenerator::Singles(int order) const {
   return (Parse("C[i] D[a]") * SimilarityTransform(order, 2))
       .Expand(0)
       .Simplify();
 }
 
-Expression CcsdGenerator::Doubles(int order) const {
+Expression CCSDGenerator::Doubles(int order) const {
   return (Parse("C[i] C[j] D[b] D[a]") * SimilarityTransform(order, 4))
       .Expand(0)
       .Simplify();
 }
 
-std::string CcsdGenerator::GenerateNumpy() const {
+std::string CCSDGenerator::GenerateNumpy() const {
   auto render = [&](const Expression& expression, std::string_view target) {
     const auto output = symbolic::Tensor::Parse(target, indices_, symmetries_);
     return einsum::RenderNumpy(

@@ -9,9 +9,9 @@
 namespace wickqc::method {
 
 // Closed-shell unitary-group CCSD with pair-symmetric spatial amplitudes.
-class UgaCcsdGenerator {
+class UGACCSDGenerator {
  public:
-  explicit UgaCcsdGenerator(IntegralConvention convention = IntegralConvention::kPhysicist);
+  explicit UGACCSDGenerator(IntegralConvention convention = IntegralConvention::kPhysicist);
 
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;
   [[nodiscard]] const symbolic::Expression& Hamiltonian() const;

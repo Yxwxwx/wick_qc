@@ -37,15 +37,15 @@ int main(int argc, char** argv) {
         : wickqc::method::IntegralConvention::kPhysicist;
     wickqc::equation::ContractionGraph graph;
     if (family == "mp") {
-      graph = wickqc::method::SpatialMpGenerator(order, convention).Equations();
+      graph = wickqc::method::SpatialMPGenerator(order, convention).Equations();
     } else if (family == "cc") {
-      graph = wickqc::method::SpatialCcGenerator(order, convention).Equations();
+      graph = wickqc::method::SpatialCCGenerator(order, convention).Equations();
     } else {
       throw std::invalid_argument("Method family must be mp or cc");
     }
     const auto program =
-        wickqc::runtime::NdArrayExecutor::Compile(graph.Simplify());
-    const auto source = wickqc::codegen::CppEmitter::Render(program, argv[4]);
+        wickqc::runtime::NDArrayExecutor::Compile(graph.Simplify());
+    const auto source = wickqc::codegen::CPPEmitter::Render(program, argv[4]);
     const std::filesystem::path path(argv[5]);
     if (path.has_parent_path()) {
       std::filesystem::create_directories(path.parent_path());

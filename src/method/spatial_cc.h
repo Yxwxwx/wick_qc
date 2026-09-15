@@ -12,9 +12,9 @@ namespace wickqc::method {
 
 // Closed-shell spin-free CC with pair-symmetric spatial amplitudes T_1...T_n.
 // Residuals use the covariant E1...E1 projectors of the supplied UGA fixture.
-class SpatialCcGenerator {
+class SpatialCCGenerator {
  public:
-  explicit SpatialCcGenerator(int excitation_rank = 2, IntegralConvention convention = IntegralConvention::kPhysicist);
+  explicit SpatialCCGenerator(int excitation_rank = 2, IntegralConvention convention = IntegralConvention::kPhysicist);
   [[nodiscard]] symbolic::Expression Parse(std::string_view text) const;
   [[nodiscard]] const symbolic::Expression& Hamiltonian() const;
   [[nodiscard]] symbolic::Expression Projected(int rank, int bch_order = 4) const;

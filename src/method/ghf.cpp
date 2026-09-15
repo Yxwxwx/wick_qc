@@ -23,7 +23,7 @@ using symbolic::SymmetryRegistry;
 using symbolic::Tensor;
 using symbolic::TensorSymmetry;
 
-std::vector<std::pair<std::string, Expression>> GhfGenerator::
+std::vector<std::pair<std::string, Expression>> GHFGenerator::
     HamiltonianBlocks() const {
   std::array<IndexRegistry, 4> indices;
   indices[0].Add(OrbitalSpace::kGeneral, "ijkl", Spin::kAlpha);
@@ -47,7 +47,7 @@ std::vector<std::pair<std::string, Expression>> GhfGenerator::
       {"h2_ba", expand("0.5 SUM <ijkl> v[ijkl] D[i] C[k] D[l] C[j]", 3)}};
 }
 
-std::string GhfGenerator::GenerateNumpy() const {
+std::string GHFGenerator::GenerateNumpy() const {
   std::string result;
   for (const auto& [name, expression] : HamiltonianBlocks()) {
     for (auto term : expression.Terms()) {

@@ -37,7 +37,7 @@ std::string Axes(int rank) {
 }
 } // namespace
 
-SpatialCcGenerator::SpatialCcGenerator(
+SpatialCCGenerator::SpatialCCGenerator(
     int excitation_rank,
     IntegralConvention convention) {
   if (excitation_rank < 1 || excitation_rank > 4) {
@@ -65,18 +65,18 @@ SpatialCcGenerator::SpatialCcGenerator(
             "SUM <" + Axes(rank) + "> t[" + Axes(rank) + "]" +
             ExcitationWord(rank, false)));
   }
-  hamiltonian_ = UgaCcsdGenerator(convention).Hamiltonian();
+  hamiltonian_ = UGACCSDGenerator(convention).Hamiltonian();
 }
 
-symbolic::Expression SpatialCcGenerator::Parse(std::string_view text) const {
+symbolic::Expression SpatialCCGenerator::Parse(std::string_view text) const {
   return symbolic::Expression::Parse(text, indices_, symmetries_);
 }
 
-const symbolic::Expression& SpatialCcGenerator::Hamiltonian() const {
+const symbolic::Expression& SpatialCCGenerator::Hamiltonian() const {
   return hamiltonian_;
 }
 
-symbolic::Expression SpatialCcGenerator::Projected(int rank, int bch_order)
+symbolic::Expression SpatialCCGenerator::Projected(int rank, int bch_order)
     const {
   if (rank < 0 || rank > static_cast<int>(cluster_ranks_.size()) ||
       bch_order < 0 || bch_order > 4) {
@@ -132,7 +132,7 @@ symbolic::Expression SpatialCcGenerator::Projected(int rank, int bch_order)
                           : (projector * result).Expand(0).Simplify();
 }
 
-equation::ContractionGraph SpatialCcGenerator::Equations() const {
+equation::ContractionGraph SpatialCCGenerator::Equations() const {
   equation::ContractionGraph graph;
   for (int rank = 0; rank <= static_cast<int>(cluster_ranks_.size()); ++rank) {
     const auto name = rank == 0 ? "energy" : "residual" + std::to_string(rank);
@@ -144,7 +144,7 @@ equation::ContractionGraph SpatialCcGenerator::Equations() const {
   return graph;
 }
 
-std::string SpatialCcGenerator::GenerateNumpy(bool optimize) const {
+std::string SpatialCCGenerator::GenerateNumpy(bool optimize) const {
   const auto graph = Equations();
   if (optimize) {
     return einsum::RenderNumpy(graph.Simplify());

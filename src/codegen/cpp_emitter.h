@@ -9,9 +9,9 @@ namespace wickqc::codegen {
 
 // Uses the executor's validated lowering and lifetime schedule. The emitted
 // translation unit depends only on wickqc_numeric, and supports runtime sizes.
-class CppEmitter {
+class CPPEmitter {
  public:
-  [[nodiscard]] static std::string Render(const runtime::NdArrayExecutor& program, std::string_view function_name);
+  [[nodiscard]] static std::string Render(const runtime::NDArrayExecutor& program, std::string_view function_name);
 };
 
 } // namespace wickqc::codegen

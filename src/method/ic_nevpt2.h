@@ -10,9 +10,9 @@
 
 namespace wickqc::method {
 
-class IcNevpt2Generator {
+class ICNEVPT2Generator {
  public:
-  IcNevpt2Generator();
+  ICNEVPT2Generator();
 
   [[nodiscard]] std::string GenerateNumpy() const;
   // Each block contains the RHS vectors and effective Hamiltonian matrices,

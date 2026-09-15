@@ -29,7 +29,7 @@ SpatialEvaluator::SpatialEvaluator(
     throw std::invalid_argument("Invalid spatial integral convention");
   }
   if (method.maximum_excitation_rank < 0 ||
-      (method.family == method::SpatialFamily::kCc &&
+      (method.family == method::SpatialFamily::kCC &&
        method.maximum_excitation_rank != 0)) {
     throw std::invalid_argument(
         "An excitation bound is supported only for MP and must be nonnegative");
@@ -46,20 +46,20 @@ SpatialEvaluator::SpatialEvaluator(
   }
   equation::ContractionGraph graph;
   switch (method.family) {
-    case method::SpatialFamily::kMp:
+    case method::SpatialFamily::kMP:
       graph =
-          method::SpatialMpGenerator(
+          method::SpatialMPGenerator(
               method.order, method.convention, method.maximum_excitation_rank)
               .Equations();
       break;
-    case method::SpatialFamily::kCc:
-      graph = method::SpatialCcGenerator(method.order, method.convention)
+    case method::SpatialFamily::kCC:
+      graph = method::SpatialCCGenerator(method.order, method.convention)
                   .Equations();
       break;
     default:
       throw std::invalid_argument("Invalid spatial method family");
   }
-  implementation_ = NdArrayExecutor::Compile(graph.Simplify());
+  implementation_ = NDArrayExecutor::Compile(graph.Simplify());
 }
 
 bool SpatialEvaluator::IsPrecompiled() const noexcept {
@@ -69,13 +69,13 @@ const std::vector<TensorBinding>& SpatialEvaluator::Inputs() const {
   if (IsPrecompiled()) {
     return std::get<const NumericKernel*>(implementation_)->Inputs();
   }
-  return std::get<NdArrayExecutor>(implementation_).Inputs();
+  return std::get<NDArrayExecutor>(implementation_).Inputs();
 }
 const std::vector<TensorBinding>& SpatialEvaluator::Outputs() const {
   if (IsPrecompiled()) {
     return std::get<const NumericKernel*>(implementation_)->Outputs();
   }
-  return std::get<NdArrayExecutor>(implementation_).Outputs();
+  return std::get<NDArrayExecutor>(implementation_).Outputs();
 }
 TensorMap<double> SpatialEvaluator::Evaluate(
     const TensorMap<double>& inputs,
@@ -84,7 +84,7 @@ TensorMap<double> SpatialEvaluator::Evaluate(
     return std::get<const NumericKernel*>(implementation_)
         ->Evaluate(inputs, dimensions);
   }
-  return std::get<NdArrayExecutor>(implementation_)
+  return std::get<NDArrayExecutor>(implementation_)
       .Evaluate(inputs, dimensions);
 }
 TensorMap<std::complex<double>> SpatialEvaluator::Evaluate(
@@ -94,7 +94,7 @@ TensorMap<std::complex<double>> SpatialEvaluator::Evaluate(
     return std::get<const NumericKernel*>(implementation_)
         ->Evaluate(inputs, dimensions);
   }
-  return std::get<NdArrayExecutor>(implementation_)
+  return std::get<NDArrayExecutor>(implementation_)
       .Evaluate(inputs, dimensions);
 }
 } // namespace wickqc::runtime

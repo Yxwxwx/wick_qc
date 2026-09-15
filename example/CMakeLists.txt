@@ -1,0 +1,11 @@
+add_executable(example_einsum einsum_text.cpp)
+target_link_libraries(example_einsum PRIVATE wickqc_symbolic)
+
+add_library(wickqc_example_io tensor_io.cpp)
+target_include_directories(wickqc_example_io PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(wickqc_example_io PUBLIC wickqc_numeric)
+
+add_executable(example_rhf evaluate_rhf.cpp)
+target_link_libraries(example_rhf PRIVATE wickqc_methods wickqc_rhf wickqc_example_io)
+
+add_subdirectory(build_time)

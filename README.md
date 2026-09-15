@@ -16,16 +16,47 @@ Declaration headers use `.h`, with definitions in `.cpp`. Headers containing
 implementations retain `.hpp`, including the NDArray backends and the block2
 reference.
 
+## Repository layout
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/symbolic/` | Wick algebra, index domains, tensor symmetries and serialization |
+| `src/equation/`, `src/einsum/` | Tensor-equation graphs, optimization, einsum IR and NumPy text |
+| `src/backend/` | Runtime NDArray, contraction planning and BLAS/TBLIS bindings |
+| `src/runtime/` | Tensor contracts, numeric executors and precompiled-kernel dispatch |
+| `src/method/` | QC method equations and the RHF input adapter |
+| `src/codegen/` | C++ emitter and the build's `generate_cpp` executable |
+| [`unit_test/`](unit_test/README.md) | Focused C++ GTest tests with runtime dimensions |
+| [`example/`](example/README.md) | Einsum text, CMake code generation and C++ host examples |
+| [`test/`](test/README.md) | Python/PySCF MP2 and CCSD numerical comparisons |
+
+The build's C++ generator lives with its implementation in `src/codegen/`.
+Examples demonstrate the public APIs, while unit tests verify their behavior.
+Generated files and numerical output stay under the build directory.
+
+Function names retain Google-style `UpperCamelCase`, such as `GenerateNumpy()`.
+Project types preserve established acronyms: `CCSDGenerator`, `GHFGenerator`,
+`UGACCSDGenerator`, `ICNEVPT2Generator`, `SCNEVPT2Generator`, `SpatialCCGenerator`,
+`SpatialMPGenerator`, `RHFData`, `NDArrayExecutor`, `CPPEmitter`, and
+`TBLISMetadata`. This acronym convention is an explicit project preference.
+
 ## Build
 
 The default build requires CMake 3.25+, C and C++20 compilers, and OpenMP.
-It builds the libraries and command-line tools. The supplied `docs/wick.hpp`
-reference is not a build dependency.
+The default also builds the examples and GTest unit tests. Load the installed
+GTest module, or provide `GTest_DIR`. The supplied `docs/wick.hpp` reference is
+not a build dependency.
 
 ```bash
+module load googletest/1.15.0
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 4
+ctest --test-dir build --output-on-failure
 ```
+
+Use `-DBUILD_TESTING=OFF` to omit GTest, and
+`-DWICKQC_BUILD_EXAMPLES=OFF` to omit demonstration programs. The core
+precompiled method library remains controlled by `WICKQC_PRECOMPILE_*`.
 
 `EINSUM_BACKEND` selects `BLAS` (default) or `TBLIS`. For the BLAS path,
 `BLAS_BACKEND` selects `NATIVE` (default), `SIMPLE`, `MKL`, `OPENBLAS`, or
@@ -76,7 +107,7 @@ the new adapter uses `.h` declarations and a `.cpp` implementation.
 The execution path is:
 
 ```text
-method.Equations() → optional graph.Simplify() → NdArrayExecutor::Compile()
+method.Equations() → optional graph.Simplify() → NDArrayExecutor::Compile()
                   → Evaluate(tensors, dimensions) → NDArray::Einsum()
                   → einsum planning → binary ContractionPlan
                      ├─ TBLIS: tensor views → tblis_tensor_mult
@@ -99,8 +130,8 @@ remain NDArray operations, so no TBLIS level-1 entry points are needed.
 using namespace wickqc;
 const runtime::Dimensions dimensions{
     {{1, 0}, nocc}, {{2, 0}, nact}, {{8, 0}, nvir}};
-const auto graph = method::SpatialCcGenerator(2).Equations().Simplify();
-const auto executor = runtime::NdArrayExecutor::Compile(graph);
+const auto graph = method::SpatialCCGenerator(2).Equations().Simplify();
+const auto executor = runtime::NDArrayExecutor::Compile(graph);
 runtime::TensorMap<double> tensors;
 for (const auto& binding : executor.Inputs()) {
   // Load the integral/amplitude/RDM block named binding.name into an NDArray
@@ -127,8 +158,8 @@ are snapshotted before execution. Empty contractions and alpha/beta scaling
 are handled consistently across executors.
 
 MP2--MP4 and CCSD/T/Q use the same adapter. SC-/IC-NEVPT2 return named graphs;
-compile/evaluate each entry of `ScNevpt2Generator().Equations()` or
-`IcNevpt2Generator().Equations()`. These evaluate the SC norms/Hamiltonian
+compile/evaluate each entry of `SCNEVPT2Generator().Equations()` or
+`ICNEVPT2Generator().Equations()`. These evaluate the SC norms/Hamiltonian
 expectations and the IC Hamiltonian/RHS blocks. Orbital restrictions, NEVPT2
 energy assembly/linear solves, and iterative MP/CC amplitude solvers remain at
 the method/application layer; this adapter executes the tensor equations.
@@ -142,13 +173,10 @@ binary contraction (256 for its default `char`); exceeding that limit throws
 instead of silently colliding labels. Orbital dimensions and strides remain runtime data, including in the
 precompiled method kernels described below.
 
-A complete MP2 model supplies integrals and denominator-divided amplitudes,
-evaluates the optimized Wick graph, and checks its energy/residuals:
-
-```bash
-./build/evaluate_mp2
-# E2 = -0.0744044593545318; residual norms approximately 0 and 1e-16
-```
+The focused MP2 unit test checks the denominator formula using dimensions
+read at process launch. The [PySCF comparison](test/README.md) validates H2O
+MP2 energy and CCSD's shared-guess first update, including amplitudes and
+residuals, on either backend and either integral convention.
 
 Generic einsum is also available without the symbolic engine:
 
@@ -158,6 +186,9 @@ auto d = wickqc::NDArray<double>::Einsum({{0, 1}, {2, 1}}, {0, 2}, {a, b});
 ```
 
 ## Build-time MP/CC code generation
+
+The [build-time examples](example/README.md#generate-numeric-c-during-the-build)
+also generate all 13 FIC/IC-NEVPT2 blocks and demonstrate a numeric-only executable.
 
 CMake/Ninja builds `generate_cpp`, runs Wick expansion and graph optimization,
 and compiles the emitted `build/.../generated/*.generated.cpp` into
@@ -184,7 +215,7 @@ cmake -S . -B build/aot -DWICKQC_PRECOMPILE_CC="2;3;4" \
   -DWICKQC_PRECOMPILE_CONVENTIONS="chemist;physicist"
 cmake --build build/aot -j 3
 
-# Empty selections give a runtime-only method registry.
+# Empty selections give a runtime-only method registry (examples are independent).
 cmake -S . -B build/runtime_only -G Ninja \
   -DWICKQC_PRECOMPILE_MP="" -DWICKQC_PRECOMPILE_CC=""
 ```
@@ -210,9 +241,9 @@ selecting the method during the build.
 #include "runtime/spatial_evaluator.h"
 
 // All counts and arrays come from the host program or files at runtime.
-wickqc::method::RhfData data{nocc, mo_energies, fock_mo, eri_chemist};
+wickqc::method::RHFData data{nocc, mo_energies, fock_mo, eri_chemist};
 wickqc::runtime::SpatialEvaluator cc({
-    wickqc::method::SpatialFamily::kCc, requested_rank,
+    wickqc::method::SpatialFamily::kCC, requested_rank,
     wickqc::method::IntegralConvention::kChemist});
 // amplitudes contains tEI, tEEII, and higher-rank tensors as required.
 auto inputs = data.Bind(cc.Inputs(), amplitudes);
@@ -230,7 +261,7 @@ Generated kernels support `double` and `complex<double>`; the RHF data adapter
 uses real integrals/amplitudes. The spin-free
 method equations retain their existing real-orbital symmetry conventions.
 
-`RhfData` expects canonical closed-shell spatial MOs, occupied first,
+`RHFData` expects canonical closed-shell spatial MOs, occupied first,
 `eri[p,q,r,s]=(pq|rs)`, and the **MO Fock matrix** (not the core Hamiltonian).
 Its blocks are strided views. For physicist kernels it supplies the matching
 view `v[p,q,r,s]=(pr|qs)`; chemist kernels use the original ordering directly.
@@ -243,7 +274,7 @@ separate host responsibility.
 
 ### Higher MP orders
 
-`SpatialMpGenerator(order, convention, maximum_excitation_rank=0)` extends the
+`SpatialMPGenerator(order, convention, maximum_excitation_rank=0)` extends the
 existing MP2--MP4 hierarchy to MPn. The unbounded default retains excitation
 ranks through twice the required wavefunction order. A positive optional MP
 bound can use the runtime electron/hole limit, or represent an explicit
@@ -270,22 +301,23 @@ can be expensive; no claim is made that arbitrary orders are practical.
 ## Generate equations
 
 ```bash
-./build/wick_qc ghf > build/ghf.generated.py
-./build/wick_qc ccsd > build/ccsd.generated.py
-./build/wick_qc uga-ccsd > build/uga_ccsd.generated.py
-./build/wick_qc ic-nevpt2 > build/ic_nevpt2.generated.py
-./build/wick_qc sc-nevpt2 --optimize > build/sc_nevpt2.generated.py
-./build/wick_qc spatial-mp 4 --optimize > build/mp4.generated.py
-./build/wick_qc spatial-cc 3 --optimize > build/ccsdt.generated.py
+./build/example/example_einsum ghf > build/ghf.generated.py
+./build/example/example_einsum ccsd > build/ccsd.generated.py
+./build/example/example_einsum uga-ccsd > build/uga_ccsd.generated.py
+./build/example/example_einsum ic-nevpt2 > build/ic_nevpt2.generated.py
+./build/example/example_einsum sc-nevpt2 --optimize > build/sc_nevpt2.generated.py
+./build/example/example_einsum spatial-mp 4 --optimize > build/mp4.generated.py
+./build/example/example_einsum spatial-cc 3 --optimize > build/ccsdt.generated.py
 ```
 
-The standalone `generate_ghf`, `generate_ccsd`, and `generate_ic_nevpt2`
-executables produce the same respective outputs. These are generated equation
-fragments: initialize the named arrays and accumulators in the calling program.
-GHF outputs coefficient tensors grouped by spin block and number of remaining
-normal-ordered operators; their axes follow that operator sequence. CCSD outputs
-the correlation energy and singles/doubles residuals. IC-NEVPT2 emits the supplied
-fixture's compute functions.
+The commands are API examples in `example/einsum_text.cpp`. `ccsd` emits
+spin-free spatial CCSD with chemist integrals; `spin-orbital-ccsd` exposes
+`CCSDGenerator`. `fic-nevpt2` aliases the existing `ic-nevpt2` equations.
+These are generated equation fragments: initialize the named arrays and
+accumulators in the calling program. IC-NEVPT2's NumPy functions additionally
+show orbital restrictions and linear solves; its C++ kernels expose the
+unrestricted RHS/Hamiltonian arrays. See [the examples](example/README.md)
+for the input conventions and embedding code.
 Spatial CC takes maximum excitation rank (2=CCSD, 3=CCSDT, 4=CCSDTQ);
 spatial MP takes perturbation order. Both emit covariant spin-free equations,
 with amplitudes supplied as inputs. See the [spatial validation record](docs/spatial_methods_validation.md)

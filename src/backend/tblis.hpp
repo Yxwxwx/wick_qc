@@ -17,12 +17,12 @@ namespace wickqc::backend {
 
 // Metadata owns only descriptors. Tensor data stays in the NDArray view,
 // including negative strides and broadcast (zero) strides; no matrix packing.
-struct TblisMetadata {
+struct TBLISMetadata {
   std::vector<tblis::len_type> lengths;
   std::vector<tblis::stride_type> strides;
   std::vector<tblis::label_type> indices;
 
-  TblisMetadata(
+  TBLISMetadata(
       std::span<const std::size_t> shape,
       std::span<const std::ptrdiff_t> tensor_strides,
       std::span<const int> tensor_indices) {
@@ -63,11 +63,11 @@ struct TblisMetadata {
 template <typename T>
 inline void TblisContract(
     const T* lhs,
-    const TblisMetadata& lhs_metadata,
+    const TBLISMetadata& lhs_metadata,
     const T* rhs,
-    const TblisMetadata& rhs_metadata,
+    const TBLISMetadata& rhs_metadata,
     T* output,
-    const TblisMetadata& output_metadata,
+    const TBLISMetadata& output_metadata,
     T alpha,
     T beta) {
   static_assert(

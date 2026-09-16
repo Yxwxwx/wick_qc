@@ -7,16 +7,17 @@ reference source copies, generated formulas, or molecular output files.
 | --- | --- |
 | `test_wick.cpp` | Fermion algebra, spin-free metric, chemist symmetry, substitution, serialization, graph coefficient regression |
 | `test_ndarray.cpp` | Views/ownership, reductions, ellipsis, broadcasting, integer labels, invalid and empty inputs |
-| `test_backend.cpp` | Real/complex backend contractions against explicit loops, strides, batches, alpha/beta |
+| `test_backend.cpp` | Real/complex backend contractions against explicit loops, strides, batches, alpha/beta, padded GEMM output |
 | `test_mp2.cpp` | Spatial MP2 energy and residuals against the denominator formula |
-| `test_lapack.cpp` | Over-/underdetermined and rank-deficient minimum-norm solves, cutoff, input preservation and invalid inputs |
+| `test_lapack.cpp` | Over-/underdetermined and rank-deficient minimum-norm solves, cutoff equality and DGELSD fallback, input preservation and invalid inputs |
 | `test_header_only.cpp`, `header_only_peer.cpp` | Umbrella-only consumers in two translation units, serialization and runtime tensor dimensions without a core object library |
 | `test_codegen.cpp` | Generated CCSD and all 13 IC-NEVPT2 kernels against unoptimized equations, real/complex arithmetic |
 
 `wickqc_unit_tests` builds the first four files independently of examples.
 `wickqc_codegen_tests` separately checks the generated-example kernels.
 `wickqc_lapack_tests` checks the selected LAPACK provider independently.
-Both MKL and OpenBLAS use the same tests.
+MKL, OpenBLAS, Netlib, and Eigen use the same tests. Eigen also runs the
+real/complex contraction tests with dynamic dimensions.
 
 The dimensions come from `WICKQC_TEST_OCCUPIED`, `WICKQC_TEST_ACTIVE` and
 `WICKQC_TEST_VIRTUAL` at process launch. CTest runs the same executable twice

@@ -31,7 +31,15 @@ void CheckBackend() {
   const auto m = 5 * wickqc::test::Dimension("WICKQC_TEST_OCCUPIED") + 1;
   const auto n = 4 * wickqc::test::Dimension("WICKQC_TEST_VIRTUAL") + 3;
   const auto k = 3 * wickqc::test::Dimension("WICKQC_TEST_ACTIVE") + 1;
-  Array a({m, k}), b({n, k}), c({m, n});
+  Array a({m, k}), b({n, k});
+#if defined(WICKQC_USE_TBLIS)
+  const auto leading_dimension = n;
+#else
+  const auto leading_dimension =
+      n + wickqc::test::Dimension("WICKQC_TEST_ACTIVE");
+#endif
+  const auto sentinel = Value<T>(17.0, -3.0);
+  auto c = Array::Full({m, leading_dimension}, sentinel);
   for (std::size_t i = 0; i < a.Size(); ++i) {
     a.data()[i] = Value<T>(
         0.01 * static_cast<double>(i % 17), -0.02 * static_cast<double>(i % 5));
@@ -53,7 +61,8 @@ void CheckBackend() {
       alpha,
       T{});
 #else
-  wickqc::blas::Gemm(m, n, k, n, alpha, a.data(), b.data(), c.data());
+  wickqc::blas::Gemm(
+      m, n, k, leading_dimension, alpha, a.data(), b.data(), c.data());
 #endif
   for (std::size_t i = 0; i < m; ++i) {
     for (std::size_t j = 0; j < n; ++j) {
@@ -64,6 +73,9 @@ void CheckBackend() {
       EXPECT_LE(
           std::abs(c.At({i, j}) - alpha * expected),
           1e-12 + 1e-12 * std::abs(expected));
+    }
+    for (std::size_t j = n; j < leading_dimension; ++j) {
+      EXPECT_EQ(c.At({i, j}), sentinel);
     }
   }
 }

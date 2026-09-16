@@ -65,7 +65,7 @@ Project types preserve established acronyms: `CCSDGenerator`, `GHFGenerator`,
 ## Build
 
 The default build requires CMake 3.25+, C and C++20 compilers, OpenMP, and MKL
-for LAPACK (or OpenBLAS selected with `-DLAPACK_BACKEND=OPENBLAS`).
+for LAPACK (alternatives: `-DLAPACK_BACKEND=OPENBLAS`, `NETLIB`, or `EIGEN`).
 The default also builds the examples and GTest unit tests. Load the installed
 GTest module, or provide `GTest_DIR`. The supplied `docs/wick.hpp` reference is
 not a build dependency.
@@ -82,11 +82,11 @@ Use `-DBUILD_TESTING=OFF` to omit GTest, and
 precompiled method library remains controlled by `WICKQC_PRECOMPILE_*`.
 
 There are two independent backend selectors. `EINSUM_BACKEND` selects `NATIVE`
-(default), `SIMPLE`, `TBLIS`, `MKL`, `OPENBLAS`, or `BLIS`; `LAPACK_BACKEND`
-selects `MKL` (default) or `OPENBLAS`. CMake defines the corresponding
+(default), `SIMPLE`, `TBLIS`, `MKL`, `OPENBLAS`, `BLIS`, `NETLIB`, or `EIGEN`; `LAPACK_BACKEND`
+selects `MKL` (default), `OPENBLAS`, `NETLIB`, or `EIGEN`. CMake defines the corresponding
 `WICKQC_USE_*` macro for einsum. NDArray selects `tblis_tensor_mult` for TBLIS
 and the matching GEMM implementation for the other backends at compile time.
-NATIVE and SIMPLE need no external BLAS for tensor contractions. The numerical
+NATIVE, SIMPLE, and EIGEN need no external BLAS for tensor contractions. The numerical
 library is `wickqc_runtime`; generic NDArray users can link only the
 `wickqc_ndarray` interface target. `wickqc_symbolic` has no numerical-backend
 dependency. Selection is per build, and all consumers of NDArray should link
@@ -109,10 +109,35 @@ or `MKLROOT` and defaults to sequential GEMM; `MKL_THREADING` can select a
 threading layer compatible with the application. OpenMP is linked explicitly
 for NDArray reductions. Control BLAS/OpenMP thread counts in the calling job.
 
+Netlib uses the same CBLAS GEMM and LAPACKE DGELSD entry points as the existing
+BLAS/LAPACK adapters. Supply an installation containing CBLAS, BLAS, LAPACKE,
+and LAPACK. CMake discovers these libraries directly; on Linux it preserves
+all selected Netlib dependencies in the executable so a shared installation
+without its own RUNPATH works through CMake's build RPATH.
+
+Eigen uses its own dynamic-size matrix product and Jacobi SVD. It uses neither
+CBLAS nor LAPACKE. Selecting EIGEN for both options gives a numerical backend
+without any external BLAS/LAPACK library. `EIGEN_ROOT` may name an unpacked
+source tree or an installation prefix; an installed `Eigen3::Eigen` CMake
+target is also supported. Do not enable Eigen's `EIGEN_USE_BLAS`,
+`EIGEN_USE_LAPACKE`, or MKL delegation macros with this backend. They are
+rejected to keep the selected execution path independent. Shapes and data
+remain runtime inputs; complex GEMM uses transpose, without conjugation.
+The LAPACK adapter retains its existing real least-squares API.
+
+```bash
+cmake -S . -B build/netlib -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DEINSUM_BACKEND=NETLIB -DLAPACK_BACKEND=NETLIB \
+  -DNETLIB_ROOT="$HOME/Applications/netlib/install"
+cmake -S . -B build/eigen -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DEINSUM_BACKEND=EIGEN -DLAPACK_BACKEND=EIGEN \
+  -DEIGEN_ROOT="$HOME/Applications/eigen"
+```
+
 The `wickqc_lapack` target provides `backend/lapack.hpp`; its public
 functions use project-owned types; the header includes the selected vendor
 adapter and the CMake target propagates its dependencies. OpenBLAS must include LAPACKE.
-TBLIS contractions can therefore use either MKL or OpenBLAS for LAPACK:
+TBLIS contractions can use any of the four LAPACK backends:
 
 ```bash
 cmake -S . -B build/tblis-mkl -DEINSUM_BACKEND=TBLIS \
@@ -120,11 +145,14 @@ cmake -S . -B build/tblis-mkl -DEINSUM_BACKEND=TBLIS \
 ```
 
 `wickqc::lapack::LeastSquares(matrix, rows, columns, rhs)` solves a real,
-row-major least-squares problem using SVD (`DGELSD`) and returns the minimum-norm
+row-major least-squares problem using SVD (`DGELSD`, or Eigen JacobiSVD) and returns the minimum-norm
 solution, singular values, and numerical rank. Matrix dimensions and values are
 runtime inputs, which the solver preserves. The default relative singular-value
 cutoff is machine epsilon times `max(rows, columns)`, matching NumPy
-`lstsq(rcond=None)`; callers may supply an explicit cutoff. This is the solve
+`lstsq(rcond=None)`; callers may supply an explicit cutoff in `(0, 1)`.
+Values at the threshold are discarded. As in DGELSD, a cutoff of zero or
+at least one falls back to LAPACK machine precision; all providers follow
+this convention. This is the solve
 required by the FIC-NEVPT2 reference. SC-NEVPT2 uses scalar energy denominators.
 
 TBLIS is discovered with `find_package(TBLIS CONFIG REQUIRED)` and linked

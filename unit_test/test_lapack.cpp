@@ -102,4 +102,30 @@ TEST(Lapack, ZeroMatrixAndInvalidInputs) {
   rhs[0] = nan;
   EXPECT_THROW((void)LeastSquares(matrix, n, n, rhs), std::invalid_argument);
 }
+
+TEST(Lapack, CutoffEqualityAndLapackFallback) {
+  const auto n = wickqc::test::Dimension("WICKQC_TEST_ACTIVE");
+  std::vector<double> matrix(n * n), rhs(n, 1.);
+  for (std::size_t i = 0; i < n; ++i) {
+    matrix[i * n + i] = 2.;
+  }
+  matrix.back() = 1.;
+  // Singular values exactly at a cutoff in (0, 1) are discarded.
+  const auto boundary = LeastSquares(matrix, n, n, rhs, 0.5);
+  EXPECT_EQ(boundary.rank, n - 1);
+  EXPECT_DOUBLE_EQ(boundary.solution.back(), 0.);
+  // DGELSD treats cutoffs outside (0, 1) as machine precision, not rank zero.
+  for (const double cutoff : {1., 2.}) {
+    const auto fallback = LeastSquares(matrix, n, n, rhs, cutoff);
+    EXPECT_EQ(fallback.rank, n);
+    EXPECT_NEAR(fallback.solution.back(), 1., 1e-12);
+  }
+  matrix.back() = std::numeric_limits<double>::epsilon() * 0.25;
+  const auto zero_cutoff = LeastSquares(matrix, n, n, rhs, 0.);
+  EXPECT_EQ(zero_cutoff.rank, n - 1);
+  EXPECT_DOUBLE_EQ(zero_cutoff.solution.back(), 0.);
+  for (std::size_t i = 0; i + 1 < n; ++i) {
+    EXPECT_NEAR(zero_cutoff.solution[i], 0.5, 1e-12);
+  }
+}
 } // namespace

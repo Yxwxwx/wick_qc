@@ -18,6 +18,7 @@
 #include "symbolic/wick.hpp" // IWYU pragma: export
 
 // LAPACK is optional for consumers that only use Wick algebra and einsum.
-#if defined(WICKQC_LAPACK_MKL) || defined(WICKQC_LAPACK_OPENBLAS)
+#if defined(WICKQC_LAPACK_MKL) || defined(WICKQC_LAPACK_OPENBLAS) || \
+    defined(WICKQC_LAPACK_NETLIB) || defined(WICKQC_LAPACK_EIGEN)
 #include "backend/lapack.hpp" // IWYU pragma: export
 #endif

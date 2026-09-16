@@ -3,7 +3,8 @@
 #include <cstddef>
 
 #if defined(WICKQC_USE_MKL) || defined(WICKQC_USE_OPENBLAS) || \
-    defined(WICKQC_USE_BLIS)
+    defined(WICKQC_USE_BLIS) || defined(WICKQC_USE_NETLIB) ||  \
+    defined(WICKQC_USE_EIGEN)
 #include <cassert>
 #include <complex>
 #include <limits>
@@ -14,12 +15,22 @@
 // Keep LAPACK declarations owned by the independently selected adapter.
 #include <mkl_cblas.h>
 
-#elif defined(WICKQC_USE_OPENBLAS) || defined(WICKQC_USE_BLIS)
+#elif defined(WICKQC_USE_OPENBLAS) || defined(WICKQC_USE_BLIS) || \
+    defined(WICKQC_USE_NETLIB)
 #include <cblas.h>
+#elif defined(WICKQC_USE_EIGEN)
+#if defined(EIGEN_USE_BLAS) || defined(EIGEN_USE_LAPACKE) ||       \
+    defined(EIGEN_USE_LAPACKE_STRICT) || defined(EIGEN_USE_MKL) || \
+    defined(EIGEN_USE_MKL_ALL) || defined(EIGEN_USE_MKL_VML)
+#error \
+    "The EIGEN backend requires Eigen without external BLAS/LAPACK delegation"
+#endif
+#include <Eigen/Core>
 #endif
 
 namespace wickqc::blas {
 
+// Eigen's product evaluation may allocate workspace, so exceptions propagate.
 template <typename T>
 inline void Gemm(
     std::size_t ni,
@@ -29,9 +40,9 @@ inline void Gemm(
     T f,
     const T* __restrict__ xa,
     const T* __restrict__ xb,
-    T* __restrict__ xc) noexcept {
+    T* __restrict__ xc) {
 #if defined(WICKQC_USE_MKL) || defined(WICKQC_USE_OPENBLAS) || \
-    defined(WICKQC_USE_BLIS)
+    defined(WICKQC_USE_BLIS) || defined(WICKQC_USE_NETLIB)
 
   static_assert(
       std::is_same_v<T, double> || std::is_same_v<T, std::complex<double>>);
@@ -81,6 +92,24 @@ inline void Gemm(
         xc,
         ldc);
   }
+
+#elif defined(WICKQC_USE_EIGEN)
+  static_assert(
+      std::is_same_v<T, double> || std::is_same_v<T, std::complex<double>>);
+  [[maybe_unused]] const auto limit =
+      static_cast<std::size_t>(std::numeric_limits<Eigen::Index>::max());
+  assert(ni <= limit && nj <= limit && nk <= limit && ldn <= limit);
+  using Matrix =
+      Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+  const auto m = static_cast<Eigen::Index>(ni);
+  const auto n = static_cast<Eigen::Index>(nj);
+  const auto k = static_cast<Eigen::Index>(nk);
+  const Eigen::Map<const Matrix> a(xa, m, k);
+  const Eigen::Map<const Matrix> b(xb, n, k);
+  Eigen::Map<Matrix, Eigen::Unaligned, Eigen::OuterStride<>> c(
+      xc, m, n, Eigen::OuterStride<>(static_cast<Eigen::Index>(ldn)));
+  // The packed right operand is n x k; complex einsum does not conjugate it.
+  c.noalias() = f * (a * b.transpose());
 
 #elif defined(WICKQC_USE_NATIVE) || \
     (!defined(WICKQC_USE_SIMPLE) && !defined(WICKQC_USE_TBLIS))

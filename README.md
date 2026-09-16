@@ -22,7 +22,7 @@ reference.
 | --- | --- |
 | `src/symbolic/` | Wick algebra, index domains, tensor symmetries and serialization |
 | `src/equation/`, `src/einsum/` | Tensor-equation graphs, optimization, einsum IR and NumPy text |
-| `src/backend/` | Runtime NDArray, contraction planning and BLAS/TBLIS bindings |
+| `src/backend/` | Runtime NDArray, contraction planning and BLAS/TBLIS/LAPACK bindings |
 | `src/runtime/` | Tensor contracts, numeric executors and precompiled-kernel dispatch |
 | `src/method/` | QC method equations and the RHF input adapter |
 | `src/codegen/` | C++ emitter and the build's `generate_cpp` executable |
@@ -42,7 +42,8 @@ Project types preserve established acronyms: `CCSDGenerator`, `GHFGenerator`,
 
 ## Build
 
-The default build requires CMake 3.25+, C and C++20 compilers, and OpenMP.
+The default build requires CMake 3.25+, C and C++20 compilers, OpenMP, and MKL
+for LAPACK (or OpenBLAS selected with `-DLAPACK_BACKEND=OPENBLAS`).
 The default also builds the examples and GTest unit tests. Load the installed
 GTest module, or provide `GTest_DIR`. The supplied `docs/wick.hpp` reference is
 not a build dependency.
@@ -58,9 +59,12 @@ Use `-DBUILD_TESTING=OFF` to omit GTest, and
 `-DWICKQC_BUILD_EXAMPLES=OFF` to omit demonstration programs. The core
 precompiled method library remains controlled by `WICKQC_PRECOMPILE_*`.
 
-`EINSUM_BACKEND` selects `BLAS` (default) or `TBLIS`. For the BLAS path,
-`BLAS_BACKEND` selects `NATIVE` (default), `SIMPLE`, `MKL`, `OPENBLAS`, or
-`BLIS`. NATIVE and SIMPLE need no external BLAS installation. The numerical
+There are two independent backend selectors. `EINSUM_BACKEND` selects `NATIVE`
+(default), `SIMPLE`, `TBLIS`, `MKL`, `OPENBLAS`, or `BLIS`; `LAPACK_BACKEND`
+selects `MKL` (default) or `OPENBLAS`. CMake defines the corresponding
+`WICKQC_USE_*` macro for einsum. NDArray selects `tblis_tensor_mult` for TBLIS
+and the matching GEMM implementation for the other backends at compile time.
+NATIVE and SIMPLE need no external BLAS for tensor contractions. The numerical
 library is `wickqc_runtime`; generic NDArray users can link only the
 `wickqc_ndarray` interface target. `wickqc_symbolic` has no numerical-backend
 dependency. Selection is per build, and all consumers of NDArray should link
@@ -68,11 +72,11 @@ the same interface target to inherit consistent definitions and libraries.
 
 ```bash
 cmake -S . -B build/openblas -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DBLAS_BACKEND=OPENBLAS -DOPENBLAS_ROOT=/path/to/openblas
+  -DEINSUM_BACKEND=OPENBLAS -DLAPACK_BACKEND=OPENBLAS -DOPENBLAS_ROOT=/path/to/openblas
 cmake -S . -B build/blis -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DBLAS_BACKEND=BLIS -DBLIS_ROOT=/path/to/blis
+  -DEINSUM_BACKEND=BLIS -DBLIS_ROOT=/path/to/blis
 module load mkl-2024.2.1
-cmake -S . -B build/mkl -G Ninja -DCMAKE_BUILD_TYPE=Release -DBLAS_BACKEND=MKL
+cmake -S . -B build/mkl -G Ninja -DCMAKE_BUILD_TYPE=Release -DEINSUM_BACKEND=MKL
 cmake -S . -B build/tblis -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DEINSUM_BACKEND=TBLIS -DTBLIS_ROOT=/path/to/tblis/install
 cmake --build build/tblis -j 4
@@ -83,11 +87,28 @@ or `MKLROOT` and defaults to sequential GEMM; `MKL_THREADING` can select a
 threading layer compatible with the application. OpenMP is linked explicitly
 for NDArray reductions. Control BLAS/OpenMP thread counts in the calling job.
 
+The `wickqc_lapack` target provides `backend/lapack.h`; its public
+interface contains no vendor types or headers. OpenBLAS must include LAPACKE.
+TBLIS contractions can therefore use either MKL or OpenBLAS for LAPACK:
+
+```bash
+cmake -S . -B build/tblis-mkl -DEINSUM_BACKEND=TBLIS \
+  -DTBLIS_ROOT=/path/to/tblis/install -DLAPACK_BACKEND=MKL
+```
+
+`wickqc::lapack::LeastSquares(matrix, rows, columns, rhs)` solves a real,
+row-major least-squares problem using SVD (`DGELSD`) and returns the minimum-norm
+solution, singular values, and numerical rank. Matrix dimensions and values are
+runtime inputs, which the solver preserves. The default relative singular-value
+cutoff is machine epsilon times `max(rows, columns)`, matching NumPy
+`lstsq(rcond=None)`; callers may supply an explicit cutoff. This is the solve
+required by the FIC-NEVPT2 reference. SC-NEVPT2 uses scalar energy denominators.
+
 TBLIS is discovered with `find_package(TBLIS CONFIG REQUIRED)` and linked
 through `TBLIS::tblis`; `CMAKE_PREFIX_PATH` also works in place of `TBLIS_ROOT`.
 The project enables both C and CXX for that package's dependencies. This path
-does not select a separate GEMM backend: `BLAS_BACKEND` is unused when
-`EINSUM_BACKEND=TBLIS`. Set `TBLIS_NUM_THREADS` for TBLIS and `OMP_NUM_THREADS`
+does not use a GEMM implementation for tensor contractions. Set
+`TBLIS_NUM_THREADS` for TBLIS and `OMP_NUM_THREADS`
 for NDArray reductions. The installed TBLIS 2.0 also falls back to
 `BLIS_NUM_THREADS`, then `OMP_NUM_THREADS`, if its own variable is unset.
 

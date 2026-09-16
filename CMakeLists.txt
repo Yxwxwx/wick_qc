@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 include(cmake/EinsumBackend.cmake)
+include(cmake/LapackBackend.cmake)
 
 add_library(wickqc_domains src/symbolic/index_domain.cpp)
 target_include_directories(wickqc_domains PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)

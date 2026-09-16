@@ -11,3 +11,5 @@ docs/*
 
 __pycache__/
 *.pyc
+
+/ref/

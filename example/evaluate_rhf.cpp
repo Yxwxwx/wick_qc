@@ -1,9 +1,11 @@
+#include <cstddef>
 #include "backend/ndarray.hpp"
-#include "method/rhf_data.h"
-#include "method/spatial_method.h"
-#include "runtime/spatial_evaluator.h"
-#include "runtime/tensor_binding.h"
-#include "tensor_io.h"
+#include "method/rhf.hpp"
+#include "method/specification.hpp"
+#include "precompiled.generated.hpp"
+#include "runtime/numeric.hpp"
+#include "runtime/spatial.hpp"
+#include "tensor_io.hpp"
 
 #include <cmath>
 #include <exception>
@@ -71,7 +73,10 @@ void Evaluate(
       }
     }
   }
-  const SpatialEvaluator mp({SpatialFamily::kMP, 2, convention}, policy);
+  const SpatialEvaluator mp(
+      {SpatialFamily::kMP, 2, convention},
+      policy,
+      wickqc::runtime::FindPrecompiled);
   const auto mp_result = mp.Evaluate(
       data.Bind(
           mp.Inputs(),
@@ -83,7 +88,10 @@ void Evaluate(
   const auto t1 = ReadTensor(input / "cc_t1_initial.bin", {nvir, nocc});
   const auto t2 =
       ReadTensor(input / "cc_t2_initial.bin", {nvir, nvir, nocc, nocc});
-  const SpatialEvaluator cc({SpatialFamily::kCC, 2, convention}, policy);
+  const SpatialEvaluator cc(
+      {SpatialFamily::kCC, 2, convention},
+      policy,
+      wickqc::runtime::FindPrecompiled);
   const auto initial = cc.Evaluate(
       data.Bind(cc.Inputs(), {{"tEI", t1}, {"tEEII", t2}}, convention),
       domains);

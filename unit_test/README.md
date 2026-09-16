@@ -10,6 +10,7 @@ reference source copies, generated formulas, or molecular output files.
 | `test_backend.cpp` | Real/complex backend contractions against explicit loops, strides, batches, alpha/beta |
 | `test_mp2.cpp` | Spatial MP2 energy and residuals against the denominator formula |
 | `test_lapack.cpp` | Over-/underdetermined and rank-deficient minimum-norm solves, cutoff, input preservation and invalid inputs |
+| `test_header_only.cpp`, `header_only_peer.cpp` | Umbrella-only consumers in two translation units, serialization and runtime tensor dimensions without a core object library |
 | `test_codegen.cpp` | Generated CCSD and all 13 IC-NEVPT2 kernels against unoptimized equations, real/complex arithmetic |
 
 `wickqc_unit_tests` builds the first four files independently of examples.

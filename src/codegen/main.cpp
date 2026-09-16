@@ -1,9 +1,4 @@
-#include "codegen/cpp_emitter.h"
-#include "equation/graph.h"
-#include "method/integral_convention.h"
-#include "method/spatial_cc.h"
-#include "method/spatial_mp.h"
-#include "runtime/ndarray_executor.h"
+#include "wick.hpp"
 
 #include <charconv>
 #include <exception>

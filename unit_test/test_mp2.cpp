@@ -1,7 +1,7 @@
 #include "backend/ndarray.hpp"
-#include "method/spatial_mp.h"
-#include "runtime/ndarray_executor.h"
-#include "runtime/tensor_binding.h"
+#include "method/spatial.hpp"
+#include "runtime/executor.hpp"
+#include "runtime/numeric.hpp"
 #include "runtime_dimensions.hpp"
 
 #include <gtest/gtest.h>

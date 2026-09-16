@@ -6,6 +6,6 @@ target_include_directories(wickqc_example_io PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(wickqc_example_io PUBLIC wickqc_numeric)
 
 add_executable(example_rhf evaluate_rhf.cpp)
-target_link_libraries(example_rhf PRIVATE wickqc_methods wickqc_rhf wickqc_example_io)
+target_link_libraries(example_rhf PRIVATE wickqc_methods wickqc_rhf wickqc_precompiled wickqc_example_io)
 
 add_subdirectory(build_time)

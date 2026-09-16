@@ -8,7 +8,7 @@ endif()
 
 add_library(wickqc_ndarray INTERFACE)
 target_include_directories(wickqc_ndarray INTERFACE
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
 target_compile_features(wickqc_ndarray INTERFACE cxx_std_20)
 target_link_libraries(wickqc_ndarray INTERFACE OpenMP::OpenMP_CXX)
 target_compile_definitions(wickqc_ndarray INTERFACE WICKQC_USE_${EINSUM_BACKEND})

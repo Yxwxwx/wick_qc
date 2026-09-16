@@ -96,6 +96,6 @@ TEST(Backend, StridedBatchesAndAlphaBeta) {
     }
   }
   EXPECT_THROW(
-      Array::Tensordot(a, b, {0}, {0}, {0}, {0}), std::invalid_argument);
+      (void)Array::Tensordot(a, b, {0}, {0}, {0}, {0}), std::invalid_argument);
 }
 } // namespace

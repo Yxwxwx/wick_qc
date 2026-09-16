@@ -11,7 +11,8 @@
 #endif
 
 #if defined(WICKQC_USE_MKL)
-#include <mkl.h>
+// Keep LAPACK declarations owned by the independently selected adapter.
+#include <mkl_cblas.h>
 
 #elif defined(WICKQC_USE_OPENBLAS) || defined(WICKQC_USE_BLIS)
 #include <cblas.h>
@@ -81,7 +82,10 @@ inline void Gemm(
         ldc);
   }
 
-#elif defined(WICKQC_USE_NATIVE)
+#elif defined(WICKQC_USE_NATIVE) || \
+    (!defined(WICKQC_USE_SIMPLE) && !defined(WICKQC_USE_TBLIS))
+
+  // Native GEMM is also the default for direct header-only consumers.
 
   constexpr std::size_t ki = 4, kj = 4;
   constexpr std::size_t kii = 4, kiii = 2, kjj = 4, kjjj = 2;

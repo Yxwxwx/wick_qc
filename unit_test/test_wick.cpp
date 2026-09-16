@@ -1,5 +1,6 @@
-#include "equation/graph.h"
-#include "symbolic/wick.h"
+#include "equation/graph.hpp"
+#include "symbolic/index_domain.hpp"
+#include "symbolic/wick.hpp"
 
 #include <gtest/gtest.h>
 
@@ -8,7 +9,12 @@
 #include <string_view>
 
 namespace {
-using namespace wickqc::symbolic;
+using wickqc::symbolic::Expression;
+using wickqc::symbolic::IndexRegistry;
+using wickqc::symbolic::OrbitalSpace;
+using wickqc::symbolic::SymmetryRegistry;
+using wickqc::symbolic::Tensor;
+using wickqc::symbolic::TensorSymmetry;
 
 class WickTest : public testing::Test {
  protected:

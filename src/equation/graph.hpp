@@ -1,4 +1,4 @@
-#include "equation/graph.h"
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -14,11 +14,158 @@
 #include <tuple>
 #include <utility>
 #include <vector>
-#include "symbolic/index_domain.h"
-#include "symbolic/wick.h"
+#include "symbolic/index_domain.hpp"
+#include "symbolic/wick.hpp"
 
 namespace wickqc::equation {
-namespace {
+
+struct TensorEquationTerm {
+  double coefficient = 1.0;
+  symbolic::Tensor output;
+  std::vector<symbolic::Tensor> inputs;
+  std::vector<symbolic::Index> reduction_indices;
+};
+
+class TensorEquation {
+ public:
+  [[nodiscard]] static TensorEquation FromExpression(
+      const symbolic::Expression& expression,
+      const symbolic::Tensor& output);
+
+  [[nodiscard]] const std::vector<TensorEquationTerm>& Terms() const noexcept;
+
+ private:
+  explicit TensorEquation(std::vector<TensorEquationTerm> terms);
+
+  std::vector<TensorEquationTerm> terms_;
+};
+
+struct IndexTransform {
+  double coefficient = 1.0;
+  std::map<std::string, std::string> names;
+  bool operator==(const IndexTransform&) const = default;
+};
+
+struct EquationNode {
+  symbolic::Tensor output;
+  symbolic::Expression expression;
+  std::vector<IndexTransform> transforms = {IndexTransform{}};
+};
+
+struct GraphOptions {
+  GraphOptions();
+  std::map<symbolic::IndexDomain, double> index_scales;
+  double multiply_scale = 5.0;
+  double add_scale = 3.0;
+  std::string intermediate_prefix = "_x";
+};
+
+// A graph of symbolic tensor assignments and output-index transformations.
+// Each optimization stage is exposed for differential verification.
+class ContractionGraph {
+ public:
+  ContractionGraph() = default;
+  explicit ContractionGraph(
+      std::vector<EquationNode> nodes,
+      GraphOptions options = {});
+
+  void Add(symbolic::Tensor output, symbolic::Expression expression);
+  [[nodiscard]] const std::vector<EquationNode>& Nodes() const;
+  [[nodiscard]] const GraphOptions& Options() const;
+  [[nodiscard]] int LastIntermediateId() const;
+  [[nodiscard]] bool IsIntermediate(const std::string& name) const;
+
+  [[nodiscard]] ContractionGraph OrderContractions() const;
+  [[nodiscard]] ContractionGraph SplitBinary() const;
+  [[nodiscard]] ContractionGraph MergeIntermediates() const;
+  [[nodiscard]] ContractionGraph FactorCommonOperands() const;
+  [[nodiscard]] ContractionGraph FactorPermutations() const;
+  [[nodiscard]] ContractionGraph ExpandPermutations() const;
+  [[nodiscard]] ContractionGraph InlineIntermediates() const;
+  [[nodiscard]] ContractionGraph TopologicalSort() const;
+  [[nodiscard]] ContractionGraph Simplify() const;
+  [[nodiscard]] ContractionGraph Expand() const;
+
+ private:
+  std::vector<EquationNode> nodes_;
+  GraphOptions options_;
+};
+
+namespace equation_detail {
+
+inline bool ContainsIndex(
+    const std::vector<symbolic::Index>& indices,
+    const symbolic::Index& target) {
+  return std::ranges::find(indices, target) != indices.end();
+}
+
+inline void ValidateTerm(
+    const symbolic::Term& term,
+    const symbolic::Tensor& output) {
+  if (output.kind != symbolic::TensorKind::kGeneric) {
+    throw std::invalid_argument("Equation output must be a coefficient tensor");
+  }
+  std::vector<symbolic::Index> output_indices;
+  for (const auto& index : output.indices) {
+    if (ContainsIndex(output_indices, index)) {
+      throw std::invalid_argument("Repeated output index '" + index.name + "'");
+    }
+    if (ContainsIndex(term.summed_indices, index)) {
+      throw std::invalid_argument(
+          "Output index '" + index.name + "' is also reduced");
+    }
+    output_indices.push_back(index);
+  }
+  std::vector<symbolic::Index> input_indices;
+  for (const auto& tensor : term.tensors) {
+    if (tensor.IsFermionOperator()) {
+      throw std::invalid_argument(
+          "Tensor equations require a fully expanded Wick expression");
+    }
+    input_indices.insert(
+        input_indices.end(), tensor.indices.begin(), tensor.indices.end());
+  }
+
+  for (const auto& index : input_indices) {
+    if (!ContainsIndex(term.summed_indices, index) &&
+        !ContainsIndex(output.indices, index)) {
+      throw std::invalid_argument(
+          "Free input index '" + index.name +
+          "' is absent from the output tensor");
+    }
+  }
+  for (const auto& index : term.summed_indices) {
+    if (!ContainsIndex(input_indices, index)) {
+      throw std::invalid_argument(
+          "Reduction index '" + index.name + "' has no tensor occurrence");
+    }
+  }
+}
+
+} // namespace equation_detail
+
+inline TensorEquation::TensorEquation(std::vector<TensorEquationTerm> terms)
+    : terms_(std::move(terms)) {}
+
+inline const std::vector<TensorEquationTerm>& TensorEquation::Terms()
+    const noexcept {
+  return terms_;
+}
+
+inline TensorEquation TensorEquation::FromExpression(
+    const symbolic::Expression& expression,
+    const symbolic::Tensor& output) {
+  std::vector<TensorEquationTerm> terms;
+  terms.reserve(expression.Terms().size());
+  for (const auto& term : expression.Terms()) {
+    equation_detail::ValidateTerm(term, output);
+    terms.push_back(
+        {term.coefficient, output, term.tensors, term.summed_indices});
+  }
+  return TensorEquation(std::move(terms));
+}
+
+namespace graph_detail {
 using symbolic::Expression;
 using symbolic::Index;
 using symbolic::IndexDomain;
@@ -30,11 +177,11 @@ using symbolic::Term;
 using IndexSet = std::set<Index>;
 using NameMap = std::map<std::string, std::string>;
 
-IndexSet Axes(const Tensor& tensor) {
+inline IndexSet Axes(const Tensor& tensor) {
   return {tensor.indices.begin(), tensor.indices.end()};
 }
 
-double Size(const IndexSet& indices, const GraphOptions& options) {
+inline double Size(const IndexSet& indices, const GraphOptions& options) {
   double size = 1.0;
   for (const auto& index : indices) {
     const auto found = options.index_scales.find(index.domain);
@@ -45,7 +192,7 @@ double Size(const IndexSet& indices, const GraphOptions& options) {
   return size;
 }
 
-std::vector<IndexSet> FutureAxes(
+inline std::vector<IndexSet> FutureAxes(
     const std::vector<Tensor>& operands,
     const Tensor& output) {
   std::vector<IndexSet> future(operands.size(), Axes(output));
@@ -57,7 +204,7 @@ std::vector<IndexSet> FutureAxes(
   return future;
 }
 
-IndexSet EliminateUnused(IndexSet& indices, const IndexSet& future) {
+inline IndexSet EliminateUnused(IndexSet& indices, const IndexSet& future) {
   IndexSet eliminated;
   for (auto it = indices.begin(); it != indices.end();) {
     if (future.contains(*it)) {
@@ -70,7 +217,7 @@ IndexSet EliminateUnused(IndexSet& indices, const IndexSet& future) {
   return eliminated;
 }
 
-bool SameDomain(const IndexDomain& a, const IndexDomain& b) {
+inline bool SameDomain(const IndexDomain& a, const IndexDomain& b) {
   return a.spins == b.spins &&
       ((a.orbital_spaces == 0 && b.orbital_spaces == 0) ||
        (a.orbital_spaces & b.orbital_spaces) != 0);
@@ -79,7 +226,7 @@ bool SameDomain(const IndexDomain& a, const IndexDomain& b) {
 // Restrict operand symmetries to the surviving axes of a binary contraction.
 // Contracted axes must map among themselves with the same renaming in both
 // operands. Repeated surviving indices are identified only after restriction.
-Tensor BinaryIntermediate(
+inline Tensor BinaryIntermediate(
     const Tensor& left,
     const Tensor& right,
     const IndexSet& eliminated,
@@ -218,11 +365,11 @@ Tensor BinaryIntermediate(
       TensorSymmetry(output.size(), restricted)};
 }
 
-Term Rename(const Term& term, const NameMap& names) {
+inline Term Rename(const Term& term, const NameMap& names) {
   return Expression(term).RenameIndices(names).Terms().front();
 }
 
-NameMap ComposeNames(NameMap first, const NameMap& second) {
+inline NameMap ComposeNames(NameMap first, const NameMap& second) {
   for (auto& [from, to] : first) {
     if (second.contains(to)) {
       to = second.at(to);
@@ -234,21 +381,21 @@ NameMap ComposeNames(NameMap first, const NameMap& second) {
   return first;
 }
 
-std::vector<NameMap> OutputPermutations(const Tensor& output) {
+inline std::vector<NameMap> OutputPermutations(const Tensor& output) {
   return output.IndexPermutations();
 }
 
-Term UnitCanonical(Term term) {
+inline Term UnitCanonical(Term term) {
   term.coefficient = 1.0;
   return term.Canonicalize();
 }
 
-NameMap TypeMatchedNames(const Tensor& a, const Tensor& b) {
+inline NameMap TypeMatchedNames(const Tensor& a, const Tensor& b) {
   return a.IndexMapTo(b);
 }
-} // namespace
+} // namespace graph_detail
 
-GraphOptions::GraphOptions() {
+inline GraphOptions::GraphOptions() {
   for (std::uint8_t spin = 0; spin < 3; ++spin) {
     index_scales[{1, spin}] = 4.0;
     index_scales[{2, spin}] = 8.0;
@@ -257,30 +404,32 @@ GraphOptions::GraphOptions() {
   index_scales[{}] = 4.0;
 }
 
-ContractionGraph::ContractionGraph(
+inline ContractionGraph::ContractionGraph(
     std::vector<EquationNode> nodes,
     GraphOptions options)
     : nodes_(std::move(nodes)), options_(std::move(options)) {}
 
-void ContractionGraph::Add(Tensor output, Expression expression) {
+inline void ContractionGraph::Add(
+    symbolic::Tensor output,
+    symbolic::Expression expression) {
   nodes_.push_back({std::move(output), std::move(expression)});
 }
 
-const std::vector<EquationNode>& ContractionGraph::Nodes() const {
+inline const std::vector<EquationNode>& ContractionGraph::Nodes() const {
   return nodes_;
 }
 
-const GraphOptions& ContractionGraph::Options() const {
+inline const GraphOptions& ContractionGraph::Options() const {
   return options_;
 }
 
-bool ContractionGraph::IsIntermediate(const std::string& name) const {
+inline bool ContractionGraph::IsIntermediate(const std::string& name) const {
   return name.starts_with(options_.intermediate_prefix);
 }
 
-int ContractionGraph::LastIntermediateId() const {
+inline int ContractionGraph::LastIntermediateId() const {
   int last = 0;
-  auto inspect = [&](const Tensor& tensor) {
+  auto inspect = [&](const symbolic::Tensor& tensor) {
     if (!IsIntermediate(tensor.name)) {
       return;
     }
@@ -302,7 +451,7 @@ int ContractionGraph::LastIntermediateId() const {
   return last;
 }
 
-ContractionGraph ContractionGraph::OrderContractions() const {
+inline ContractionGraph ContractionGraph::OrderContractions() const {
   auto result = *this;
   for (auto& node : result.nodes_) {
     auto terms = node.expression.Terms();
@@ -312,24 +461,24 @@ ContractionGraph ContractionGraph::OrderContractions() const {
       }
       std::vector<std::size_t> order(term.tensors.size());
       std::iota(order.begin(), order.end(), 0);
-      std::vector<Tensor> best;
+      std::vector<symbolic::Tensor> best;
       double best_cost = 0.0;
       do {
         if (order[0] > order[1]) {
           continue;
         }
-        std::vector<Tensor> operands;
+        std::vector<symbolic::Tensor> operands;
         operands.reserve(order.size());
         for (auto i : order) {
           operands.push_back(term.tensors[i]);
         }
-        const auto future = FutureAxes(operands, node.output);
-        auto live = Axes(operands.front());
+        const auto future = graph_detail::FutureAxes(operands, node.output);
+        auto live = graph_detail::Axes(operands.front());
         double cost = 0.0;
         for (std::size_t i = 1; i < operands.size(); ++i) {
           live.insert(operands[i].indices.begin(), operands[i].indices.end());
-          cost += Size(live, options_);
-          EliminateUnused(live, future[i]);
+          cost += graph_detail::Size(live, options_);
+          graph_detail::EliminateUnused(live, future[i]);
         }
         if (best.empty() || cost < best_cost) {
           best = std::move(operands);
@@ -338,12 +487,12 @@ ContractionGraph ContractionGraph::OrderContractions() const {
       } while (std::next_permutation(order.begin(), order.end()));
       term.tensors = std::move(best);
     }
-    node.expression = Expression(std::move(terms));
+    node.expression = symbolic::Expression(std::move(terms));
   }
   return result;
 }
 
-ContractionGraph ContractionGraph::SplitBinary() const {
+inline ContractionGraph ContractionGraph::SplitBinary() const {
   auto result = *this;
   int next = LastIntermediateId();
   std::vector<EquationNode> intermediates;
@@ -353,51 +502,53 @@ ContractionGraph ContractionGraph::SplitBinary() const {
       if (term.tensors.size() <= 2) {
         continue;
       }
-      const auto future = FutureAxes(term.tensors, node.output);
+      const auto future = graph_detail::FutureAxes(term.tensors, node.output);
       auto partial = term.tensors.front();
-      auto live = Axes(partial);
+      auto live = graph_detail::Axes(partial);
       for (std::size_t i = 1; i < term.tensors.size(); ++i) {
         const auto& operand = term.tensors[i];
         live.insert(operand.indices.begin(), operand.indices.end());
-        const auto reduced = EliminateUnused(live, future[i]);
-        Term binary{1.0, {partial, operand}, {reduced.begin(), reduced.end()}};
+        const auto reduced = graph_detail::EliminateUnused(live, future[i]);
+        symbolic::Term binary{
+            1.0, {partial, operand}, {reduced.begin(), reduced.end()}};
         if (i + 1 == term.tensors.size()) {
           binary.coefficient = term.coefficient;
           term = std::move(binary);
           break;
         }
-        auto output = BinaryIntermediate(
+        auto output = graph_detail::BinaryIntermediate(
             partial,
             operand,
             reduced,
             options_.intermediate_prefix + std::to_string(++next));
-        intermediates.push_back({output, Expression(std::move(binary))});
+        intermediates.push_back(
+            {output, symbolic::Expression(std::move(binary))});
         partial = std::move(output);
       }
     }
-    node.expression = Expression(std::move(terms));
+    node.expression = symbolic::Expression(std::move(terms));
   }
   result.nodes_.insert(
       result.nodes_.end(), intermediates.begin(), intermediates.end());
   return result;
 }
 
-ContractionGraph ContractionGraph::FactorPermutations() const {
+inline ContractionGraph ContractionGraph::FactorPermutations() const {
   ContractionGraph result({}, options_);
   int next = LastIntermediateId();
   struct Orbit {
-    Term representative;
-    std::vector<Term> images;
+    symbolic::Term representative;
+    std::vector<symbolic::Term> images;
     std::vector<std::pair<int, double>> weights;
   };
   for (const auto& node : nodes_) {
-    const auto permutations = OutputPermutations(node.output);
+    const auto permutations = graph_detail::OutputPermutations(node.output);
     std::vector<Orbit> orbits;
     for (const auto& term : node.expression.Terms()) {
       if (term.coefficient == 0.0) {
         continue;
       }
-      const auto canonical = UnitCanonical(term);
+      const auto canonical = graph_detail::UnitCanonical(term);
       if (canonical.coefficient == 0.0) {
         continue;
       }
@@ -422,7 +573,8 @@ ContractionGraph ContractionGraph::FactorPermutations() const {
         orbit.representative.coefficient = 1.0;
         for (const auto& permutation : permutations) {
           orbit.images.push_back(
-              UnitCanonical(Rename(orbit.representative, permutation)));
+              graph_detail::UnitCanonical(
+                  graph_detail::Rename(orbit.representative, permutation)));
         }
         orbits.push_back(std::move(orbit));
       }
@@ -460,7 +612,7 @@ ContractionGraph ContractionGraph::FactorPermutations() const {
     std::ranges::sort(order, [&](auto a, auto b) {
       return pattern_less(orbits[a], orbits[b]);
     });
-    std::vector<Term> assembly;
+    std::vector<symbolic::Term> assembly;
     for (std::size_t position = 0; position < order.size(); ++position) {
       const auto& orbit = orbits[order[position]];
       if (position == 0 || pattern_less(orbits[order[position - 1]], orbit)) {
@@ -473,28 +625,29 @@ ContractionGraph ContractionGraph::FactorPermutations() const {
             transforms.push_back(
                 {weight * outer.coefficient,
                  index < 0 ? outer.names
-                           : ComposeNames(permutations[index], outer.names)});
+                           : graph_detail::ComposeNames(
+                                 permutations[index], outer.names)});
           }
         }
         result.nodes_.push_back(
             {std::move(output),
-             Expression(orbit.representative),
+             symbolic::Expression(orbit.representative),
              std::move(transforms)});
       } else {
-        result.nodes_.back().expression =
-            result.nodes_.back().expression + Expression(orbit.representative);
+        result.nodes_.back().expression = result.nodes_.back().expression +
+            symbolic::Expression(orbit.representative);
       }
     }
     if (assembly.size() == 1) {
       result.nodes_.back().output = node.output;
     } else {
-      result.Add(node.output, Expression(std::move(assembly)));
+      result.Add(node.output, symbolic::Expression(std::move(assembly)));
     }
   }
   return result;
 }
 
-ContractionGraph ContractionGraph::FactorCommonOperands() const {
+inline ContractionGraph ContractionGraph::FactorCommonOperands() const {
   ContractionGraph result({}, options_);
   int next = LastIntermediateId();
   for (const auto& node : nodes_) {
@@ -502,14 +655,14 @@ ContractionGraph ContractionGraph::FactorCommonOperands() const {
       result.nodes_.push_back(node);
       continue;
     }
-    std::vector<Term> untouched, groups;
+    std::vector<symbolic::Term> untouched, groups;
     std::vector<EquationNode> generated;
     for (const auto& term : node.expression.Terms()) {
       bool eligible = term.tensors.size() == 2;
       if (eligible) {
-        const auto a = Axes(term.tensors[0]);
-        const auto b = Axes(term.tensors[1]);
-        const IndexSet reductions(
+        const auto a = graph_detail::Axes(term.tensors[0]);
+        const auto b = graph_detail::Axes(term.tensors[1]);
+        const graph_detail::IndexSet reductions(
             term.summed_indices.begin(), term.summed_indices.end());
         eligible = a.size() == term.tensors[0].indices.size() &&
             b.size() == term.tensors[1].indices.size();
@@ -538,9 +691,10 @@ ContractionGraph ContractionGraph::FactorCommonOperands() const {
               continue;
             }
             for (const auto& symmetry : candidate.symmetry.Elements()) {
-              Term permuted = term;
+              symbolic::Term permuted = term;
               permuted.tensors[own] = candidate.Permute(symmetry);
-              auto names = TypeMatchedNames(permuted.tensors[own], pattern);
+              auto names = graph_detail::TypeMatchedNames(
+                  permuted.tensors[own], pattern);
               if (names.empty()) {
                 continue;
               }
@@ -553,7 +707,7 @@ ContractionGraph ContractionGraph::FactorCommonOperands() const {
                 return !bound_name(term.summed_indices, pair.first) ||
                     !bound_name(group.summed_indices, pair.second);
               });
-              permuted = Rename(permuted, names);
+              permuted = graph_detail::Rename(permuted, names);
               if (!(permuted.tensors[own] == pattern)) {
                 continue;
               }
@@ -561,31 +715,32 @@ ContractionGraph ContractionGraph::FactorCommonOperands() const {
               const auto& b = permuted.tensors[1 - own];
               // A shared factor alone does not align the remaining free
               // axes. Their sum must have one well-defined tensor shape.
-              if (Axes(a) != Axes(b)) {
+              if (graph_detail::Axes(a) != graph_detail::Axes(b)) {
                 continue;
               }
-              std::vector<SignedPermutation> intersection;
+              std::vector<symbolic::SignedPermutation> intersection;
               for (const auto& permutation : a.symmetry.Elements()) {
                 if (std::ranges::find(b.symmetry.Elements(), permutation) !=
                     b.symmetry.Elements().end()) {
                   intersection.push_back(permutation);
                 }
               }
-              Tensor combined{
+              symbolic::Tensor combined{
                   options_.intermediate_prefix + std::to_string(++next),
                   a.indices,
-                  TensorKind::kGeneric,
-                  TensorSymmetry(a.indices.size(), intersection)};
-              Expression sum;
-              auto absorb = [&](const Tensor& operand, double scale) {
+                  symbolic::TensorKind::kGeneric,
+                  symbolic::TensorSymmetry(a.indices.size(), intersection)};
+              symbolic::Expression sum;
+              auto absorb = [&](const symbolic::Tensor& operand, double scale) {
                 for (auto& previous : generated) {
                   if (previous.output == operand) {
                     sum = sum + scale * previous.expression;
-                    previous.expression = Expression{};
+                    previous.expression = symbolic::Expression{};
                     return;
                   }
                 }
-                sum = sum + Expression(Term{scale, {operand}, {}});
+                sum = sum +
+                    symbolic::Expression(symbolic::Term{scale, {operand}, {}});
               };
               absorb(a, group.coefficient);
               absorb(b, symmetry.sign * permuted.coefficient);
@@ -612,23 +767,25 @@ ContractionGraph ContractionGraph::FactorCommonOperands() const {
     }
     untouched.insert(untouched.end(), groups.begin(), groups.end());
     result.nodes_.push_back(
-        {node.output, Expression(std::move(untouched)), node.transforms});
+        {node.output,
+         symbolic::Expression(std::move(untouched)),
+         node.transforms});
   }
   return result;
 }
 
-ContractionGraph ContractionGraph::MergeIntermediates() const {
+inline ContractionGraph ContractionGraph::MergeIntermediates() const {
   struct Alias {
     std::string name;
     std::vector<std::size_t> axes;
     double scale;
   };
   using Signature = std::pair<std::string, std::size_t>;
-  std::vector<std::vector<Term>> canonical(nodes_.size());
+  std::vector<std::vector<symbolic::Term>> canonical(nodes_.size());
   for (std::size_t i = 0; i < nodes_.size(); ++i) {
     if (nodes_[i].transforms == std::vector<IndexTransform>{{}}) {
       for (const auto& term : nodes_[i].expression.Terms()) {
-        canonical[i].push_back(UnitCanonical(term));
+        canonical[i].push_back(graph_detail::UnitCanonical(term));
       }
     }
   }
@@ -655,7 +812,7 @@ ContractionGraph ContractionGraph::MergeIntermediates() const {
           a.front().coefficient == 0.0 || b.front().coefficient == 0.0) {
         continue;
       }
-      std::map<Index, Index> free_names, bound_names;
+      std::map<symbolic::Index, symbolic::Index> free_names, bound_names;
       bool matches = true;
       for (std::size_t k = 0; k < a.size() && matches; ++k) {
         if (a[k].tensors.size() != b[k].tensors.size() ||
@@ -663,9 +820,9 @@ ContractionGraph ContractionGraph::MergeIntermediates() const {
           matches = false;
           break;
         }
-        const IndexSet a_bound(
+        const graph_detail::IndexSet a_bound(
             a[k].summed_indices.begin(), a[k].summed_indices.end());
-        const IndexSet b_bound(
+        const graph_detail::IndexSet b_bound(
             b[k].summed_indices.begin(), b[k].summed_indices.end());
         for (std::size_t operand = 0; operand < a[k].tensors.size() && matches;
              ++operand) {
@@ -763,15 +920,15 @@ ContractionGraph ContractionGraph::MergeIntermediates() const {
         }
       }
     }
-    node.expression = Expression(std::move(terms));
+    node.expression = symbolic::Expression(std::move(terms));
   }
   return aliases.empty() ? result : result.MergeIntermediates();
 }
 
-ContractionGraph ContractionGraph::ExpandPermutations() const {
+inline ContractionGraph ContractionGraph::ExpandPermutations() const {
   ContractionGraph result({}, options_);
   for (const auto& node : nodes_) {
-    Expression expanded;
+    symbolic::Expression expanded;
     for (const auto& transform : node.transforms) {
       expanded = expanded +
           transform.coefficient *
@@ -782,9 +939,10 @@ ContractionGraph ContractionGraph::ExpandPermutations() const {
   return result;
 }
 
-ContractionGraph ContractionGraph::InlineIntermediates() const {
+inline ContractionGraph ContractionGraph::InlineIntermediates() const {
   ContractionGraph result({}, options_);
-  std::map<std::string, std::pair<Tensor, Expression>> definitions;
+  std::map<std::string, std::pair<symbolic::Tensor, symbolic::Expression>>
+      definitions;
   for (const auto& node : nodes_) {
     if (node.transforms != std::vector<IndexTransform>{{}}) {
       throw std::invalid_argument(
@@ -801,7 +959,7 @@ ContractionGraph ContractionGraph::InlineIntermediates() const {
   return result;
 }
 
-ContractionGraph ContractionGraph::TopologicalSort() const {
+inline ContractionGraph ContractionGraph::TopologicalSort() const {
   using Signature = std::pair<std::string, std::size_t>;
   std::map<Signature, std::size_t> definitions;
   for (std::size_t i = 0; i < nodes_.size(); ++i) {
@@ -829,7 +987,7 @@ ContractionGraph ContractionGraph::TopologicalSort() const {
     // Tensor extent counts axes, including repeated output slots.
     double extent = 1.0;
     for (const auto& index : nodes_[i].output.indices) {
-      extent *= Size({index}, options_);
+      extent *= graph_detail::Size({index}, options_);
     }
     sizes.push_back(extent);
     if (unmet.back() == 0) {
@@ -879,7 +1037,7 @@ ContractionGraph ContractionGraph::TopologicalSort() const {
   return result;
 }
 
-ContractionGraph ContractionGraph::Simplify() const {
+inline ContractionGraph ContractionGraph::Simplify() const {
   return FactorPermutations()
       .OrderContractions()
       .SplitBinary()
@@ -888,7 +1046,7 @@ ContractionGraph ContractionGraph::Simplify() const {
       .TopologicalSort();
 }
 
-ContractionGraph ContractionGraph::Expand() const {
+inline ContractionGraph ContractionGraph::Expand() const {
   return ExpandPermutations().InlineIntermediates();
 }
 

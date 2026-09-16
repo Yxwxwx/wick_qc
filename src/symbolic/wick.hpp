@@ -1,4 +1,4 @@
-#include "symbolic/wick.h"
+#pragma once
 
 #include <algorithm>
 #include <array>
@@ -13,6 +13,8 @@
 #include <functional>
 #include <iomanip>
 #include <ios>
+#include <iosfwd>
+#include <istream>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -25,12 +27,227 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
-#include "symbolic/index_domain.h"
+#include "symbolic/index_domain.hpp"
 
 namespace wickqc::symbolic {
-namespace {
+
+struct Index {
+  std::string name;
+  IndexDomain domain;
+
+  [[nodiscard]] std::strong_ordering operator<=>(const Index& other) const;
+  bool operator==(const Index&) const = default;
+  [[nodiscard]] bool HasTypes() const noexcept;
+  [[nodiscard]] bool IsShort() const noexcept;
+  [[nodiscard]] Index Untyped() const;
+  [[nodiscard]] std::size_t Hash() const noexcept;
+  void Save(std::ostream& output) const;
+  [[nodiscard]] static Index Load(std::istream& input);
+};
+
+class IndexRegistry {
+ public:
+  void Add(OrbitalSpace space, std::string_view names, Spin spin = Spin::kNone);
+  [[nodiscard]] Index Resolve(std::string_view name) const;
+  [[nodiscard]] std::vector<Index> Parse(std::string_view names) const;
+  [[nodiscard]] std::set<Index> ParseSet(std::string_view names) const;
+  [[nodiscard]] std::vector<IndexDomain> ConcreteDomains(
+      std::string_view name) const;
+
+ private:
+  std::map<std::string, IndexDomain> domains_;
+};
+
+struct SignedPermutation {
+  std::vector<std::size_t> order;
+  int sign = 1;
+
+  [[nodiscard]] std::strong_ordering operator<=>(
+      const SignedPermutation& other) const;
+  bool operator==(const SignedPermutation&) const = default;
+  [[nodiscard]] static SignedPermutation Identity(std::size_t rank);
+  [[nodiscard]] SignedPermutation Compose(const SignedPermutation& other) const;
+  [[nodiscard]] std::size_t Hash() const noexcept;
+  void Save(std::ostream& output) const;
+  [[nodiscard]] static SignedPermutation Load(std::istream& input);
+};
+
+class TensorSymmetry {
+ public:
+  TensorSymmetry() = default;
+  TensorSymmetry(
+      std::size_t rank,
+      const std::vector<SignedPermutation>& generators);
+
+  [[nodiscard]] static TensorSymmetry None(std::size_t rank);
+  [[nodiscard]] static TensorSymmetry TwoSymmetric();
+  [[nodiscard]] static TensorSymmetry TwoAntisymmetric();
+  // Antisymmetry under interchange of the two index pairs (CT amplitudes).
+  [[nodiscard]] static TensorSymmetry CanonicalTransformation();
+  [[nodiscard]] static TensorSymmetry FourAntisymmetric();
+  [[nodiscard]] static TensorSymmetry QuantumChemistryChemists();
+  [[nodiscard]] static TensorSymmetry QuantumChemistryPhysicists();
+  [[nodiscard]] static TensorSymmetry SpinFree(
+      std::size_t order,
+      bool hermitian = false);
+  // Independent antisymmetry within each half; no Hermitian pair exchange.
+  [[nodiscard]] static TensorSymmetry PairAntisymmetric(std::size_t order);
+  [[nodiscard]] static TensorSymmetry All(std::size_t rank);
+  // Preserve an already enumerated group, including the supplied element order.
+  [[nodiscard]] static TensorSymmetry FromElements(
+      std::vector<SignedPermutation> elements);
+
+  [[nodiscard]] const std::vector<SignedPermutation>& Elements() const;
+
+ private:
+  std::vector<SignedPermutation> elements_;
+};
+
+class SymmetryRegistry {
+ public:
+  void Add(std::string name, std::size_t rank, TensorSymmetry symmetry);
+  [[nodiscard]] TensorSymmetry Lookup(std::string_view name, std::size_t rank)
+      const;
+
+ private:
+  std::map<std::pair<std::string, std::size_t>, TensorSymmetry> symmetries_;
+};
+
+enum class TensorKind : std::uint8_t {
+  kGeneric,
+  kCreation,
+  kAnnihilation,
+  kSpinFree,
+  kDelta,
+};
+
+struct Tensor {
+  std::string name;
+  std::vector<Index> indices;
+  TensorKind kind = TensorKind::kGeneric;
+  // Omitted symmetry means no extra symmetry, not an empty allowed group.
+  TensorSymmetry symmetry = TensorSymmetry::None(indices.size());
+
+  [[nodiscard]] static Tensor Parse(
+      std::string_view text,
+      const IndexRegistry& indices,
+      const SymmetryRegistry& symmetries);
+  [[nodiscard]] bool IsFermionOperator() const noexcept;
+  [[nodiscard]] bool operator==(const Tensor& other) const;
+  [[nodiscard]] bool operator<(const Tensor& other) const;
+  [[nodiscard]] int CompareFermiClass(const Tensor& rhs) const;
+  [[nodiscard]] Tensor Permute(const SignedPermutation& permutation) const;
+  [[nodiscard]] Tensor Canonicalize(double& coefficient) const;
+  [[nodiscard]] Tensor RestrictSymmetry() const;
+  [[nodiscard]] std::map<std::string, std::string> IndexMapTo(
+      const Tensor& other) const;
+  [[nodiscard]] std::vector<std::map<std::string, std::string>>
+  IndexPermutations() const;
+  [[nodiscard]] std::string ToString(
+      const SignedPermutation& permutation) const;
+  [[nodiscard]] std::string PermutationRules() const;
+  [[nodiscard]] int SpinTag() const;
+  void SetSpinTag(int tag);
+  void Save(std::ostream& output) const;
+  [[nodiscard]] static Tensor Load(std::istream& input);
+};
+
+struct Term {
+  double coefficient = 1.0;
+  std::vector<Tensor> tensors;
+  std::vector<Index> summed_indices;
+  [[nodiscard]] bool operator==(const Term& other) const;
+  [[nodiscard]] bool operator<(const Term& other) const;
+  [[nodiscard]] bool SameForm(const Term& other) const;
+  [[nodiscard]] std::set<Index> UsedIndices() const;
+  [[nodiscard]] std::set<std::string> UsedIndexNames() const;
+  [[nodiscard]] std::set<std::string> SummedIndexNames() const;
+  [[nodiscard]] std::map<int, int> SpinTagCounts() const;
+  [[nodiscard]] bool HasOperatorsIn(OrbitalSpace space) const;
+  [[nodiscard]] Term Canonicalize() const;
+  // Canonicalize each tensor and sort commuting factors; preserve operator
+  // order.
+  [[nodiscard]] Term SortFactors() const;
+  void Save(std::ostream& output) const;
+  [[nodiscard]] static Term Load(std::istream& input);
+};
+
+class Expression {
+ public:
+  Expression() = default;
+  explicit Expression(Term term);
+  explicit Expression(std::vector<Term> terms);
+
+  [[nodiscard]] static Expression Parse(
+      std::string_view text,
+      const IndexRegistry& indices,
+      const SymmetryRegistry& symmetries);
+  [[nodiscard]] static std::pair<Tensor, Expression> ParseDefinition(
+      std::string_view text,
+      const IndexRegistry& indices,
+      const SymmetryRegistry& symmetries);
+
+  // Orbital alternatives of bound indices are enumerated; spin masks are kept.
+  [[nodiscard]] Expression SplitIndexDomains() const;
+  // Normal ordering alone, without the domain splitting performed by Expand.
+  [[nodiscard]] Expression NormalOrder(
+      int max_uncontracted = -1,
+      bool skip_contractions = false,
+      bool compact_spin_free = true) const;
+
+  // Compact spin-free output omits residual paired inactive operators.
+  // Disable it to retain explicit operators with summed spin tags.
+  [[nodiscard]] Expression Expand(
+      int max_uncontracted = -1,
+      bool skip_contractions = false,
+      bool compact_spin_free = true) const;
+  [[nodiscard]] Expression Simplify(double tolerance = 1.0e-12) const;
+  [[nodiscard]] Expression SortFactors() const;
+  [[nodiscard]] Expression SimplifyDeltas() const;
+  [[nodiscard]] Expression RemoveZeros(double tolerance = 1.0e-12) const;
+  [[nodiscard]] Expression MergeTerms(double tolerance = 1.0e-12) const;
+  [[nodiscard]] Expression Conjugate() const;
+  // Simultaneous renaming, including bound summation indices.
+  [[nodiscard]] Expression RenameIndices(
+      const std::map<std::string, std::string>& names) const;
+  // Substitute each matching tensor once, with fresh dummy indices per use.
+  [[nodiscard]] Expression Substitute(
+      const std::map<std::string, std::pair<Tensor, Expression>>& definitions)
+      const;
+  [[nodiscard]] Expression RemoveExternal() const;
+  [[nodiscard]] Expression RemoveInactive() const;
+  [[nodiscard]] Expression AddSpinFreeTransposeSymmetry() const;
+
+  [[nodiscard]] const std::vector<Term>& Terms() const noexcept;
+  [[nodiscard]] bool operator==(const Expression& other) const;
+  [[nodiscard]] bool operator<(const Expression& other) const;
+  [[nodiscard]] bool Empty() const noexcept;
+  // Native-ABI binary layout interoperable with the supplied Wick reference.
+  void Save(std::ostream& output) const;
+  [[nodiscard]] static Expression Load(std::istream& input);
+
+  friend Expression operator+(const Expression& lhs, const Expression& rhs);
+  friend Expression operator-(const Expression& lhs, const Expression& rhs);
+  friend Expression operator*(const Expression& lhs, const Expression& rhs);
+  friend Expression operator*(double scalar, const Expression& expression);
+  friend Expression operator*(const Expression& expression, double scalar);
+  friend Expression Commutator(const Expression& lhs, const Expression& rhs);
+  // Multiply with fresh dummy labels, then bind every orbital index.
+  friend Expression FullySummedProduct(
+      const Expression& lhs,
+      const Expression& rhs);
+  friend std::ostream& operator<<(
+      std::ostream& output,
+      const Expression& expression);
+
+ private:
+  std::vector<Term> terms_;
+};
+
+namespace wick_detail {
 
 constexpr std::uint8_t ToMask(OrbitalSpace space) {
   return static_cast<std::uint8_t>(space);
@@ -40,7 +257,7 @@ constexpr std::uint8_t ToMask(Spin spin) {
   return static_cast<std::uint8_t>(spin);
 }
 
-std::string Trim(std::string_view text) {
+inline std::string Trim(std::string_view text) {
   const auto first = text.find_first_not_of(" \t\r");
   if (first == std::string_view::npos) {
     return {};
@@ -49,7 +266,7 @@ std::string Trim(std::string_view text) {
   return std::string(text.substr(first, last - first + 1));
 }
 
-std::vector<std::string> SplitIndexNames(std::string_view text) {
+inline std::vector<std::string> SplitIndexNames(std::string_view text) {
   std::vector<std::string> names;
   const bool has_separator =
       text.find_first_of(" \t") != std::string_view::npos;
@@ -79,7 +296,7 @@ std::vector<std::string> SplitIndexNames(std::string_view text) {
   return names;
 }
 
-SignedPermutation Compose(
+inline SignedPermutation Compose(
     const SignedPermutation& lhs,
     const SignedPermutation& rhs) {
   assert(lhs.order.size() == rhs.order.size());
@@ -92,16 +309,16 @@ SignedPermutation Compose(
   return result;
 }
 
-std::string DomainKey(const IndexDomain& domain) {
+inline std::string DomainKey(const IndexDomain& domain) {
   return std::to_string(domain.orbital_spaces) + ":" +
       std::to_string(domain.spins);
 }
 
-std::string IndexKey(const Index& index) {
+inline std::string IndexKey(const Index& index) {
   return DomainKey(index.domain) + ":" + index.name;
 }
 
-std::string TensorKey(const Tensor& tensor) {
+inline std::string TensorKey(const Tensor& tensor) {
   std::ostringstream output;
   output << static_cast<int>(tensor.kind) << ':' << tensor.name << '[';
   for (const auto& index : tensor.indices) {
@@ -111,7 +328,7 @@ std::string TensorKey(const Tensor& tensor) {
   return output.str();
 }
 
-std::string TermKey(const Term& term) {
+inline std::string TermKey(const Term& term) {
   std::ostringstream output;
   for (const auto& index : term.summed_indices) {
     output << "S{" << IndexKey(index) << '}';
@@ -122,7 +339,7 @@ std::string TermKey(const Term& term) {
   return output.str();
 }
 
-std::vector<Index> AllIndices(const Term& term) {
+inline std::vector<Index> AllIndices(const Term& term) {
   std::vector<Index> result = term.summed_indices;
   for (const auto& tensor : term.tensors) {
     result.insert(result.end(), tensor.indices.begin(), tensor.indices.end());
@@ -130,16 +347,16 @@ std::vector<Index> AllIndices(const Term& term) {
   return result;
 }
 
-bool IsSummed(const Term& term, const Index& index) {
+inline bool IsSummed(const Term& term, const Index& index) {
   return std::ranges::find(term.summed_indices, index) !=
       term.summed_indices.end();
 }
 
-void EraseSummed(Term& term, const Index& index) {
+inline void EraseSummed(Term& term, const Index& index) {
   std::erase(term.summed_indices, index);
 }
 
-void AddDeltaTensor(Term& term, const Index& lhs, const Index& rhs) {
+inline void AddDeltaTensor(Term& term, const Index& lhs, const Index& rhs) {
   Tensor delta;
   delta.name = "delta";
   delta.indices = {lhs, rhs};
@@ -148,7 +365,7 @@ void AddDeltaTensor(Term& term, const Index& lhs, const Index& rhs) {
   term.tensors.push_back(std::move(delta));
 }
 
-void AppendDeltas(
+inline void AppendDeltas(
     Term& term,
     const std::vector<std::pair<Index, Index>>& deltas) {
   // Expansion records the matching. Index elimination belongs to Simplify,
@@ -158,13 +375,15 @@ void AppendDeltas(
   }
 }
 
-bool TensorRepresentativeLess(const Tensor& lhs, const Tensor& rhs);
+inline bool TensorRepresentativeLess(const Tensor& lhs, const Tensor& rhs);
 
-bool IsExternal(const IndexDomain& domain) {
+inline bool IsExternal(const IndexDomain& domain) {
   return (domain.orbital_spaces & ToMask(OrbitalSpace::kExternal)) != 0;
 }
 
-bool ContractionDomainsMatch(const IndexDomain& lhs, const IndexDomain& rhs) {
+inline bool ContractionDomainsMatch(
+    const IndexDomain& lhs,
+    const IndexDomain& rhs) {
   // An unspecified type is not a wildcard in a Wick contraction. General
   // indices contract with general indices; typed indices need a common space
   // and exactly the same explicit spin flags.
@@ -221,7 +440,7 @@ class DisjointSet {
   std::vector<std::size_t> parent_;
 };
 
-Tensor TaggedOperator(const SpinOperator& op) {
+inline Tensor TaggedOperator(const SpinOperator& op) {
   return {
       (op.kind == TensorKind::kCreation ? "C" : "D") +
           std::to_string(op.spin_label),
@@ -230,7 +449,7 @@ Tensor TaggedOperator(const SpinOperator& op) {
       TensorSymmetry::None(1)};
 }
 
-bool CanContract(
+inline bool CanContract(
     const SpinOperator& lhs,
     const SpinOperator& rhs,
     bool spin_free) {
@@ -246,7 +465,7 @@ bool CanContract(
 // Sorting the whole operator word first fixes the order for every residual
 // subsequence. In explicit spin-free output, nonactive lines precede active
 // lines and the two halves have opposite spin-label order.
-std::vector<std::size_t> SpinOperatorOrder(
+inline std::vector<std::size_t> SpinOperatorOrder(
     const std::vector<SpinOperator>& operators,
     bool compact) {
   std::vector<std::size_t> order(operators.size());
@@ -331,7 +550,8 @@ struct InactiveEndpoints {
   }
 };
 
-int SpinContractionSign(const std::vector<SpinContractionPair>& contractions) {
+inline int SpinContractionSign(
+    const std::vector<SpinContractionPair>& contractions) {
   int parity = 0;
   for (std::size_t level = 0; level < contractions.size(); ++level) {
     const auto [creation, annihilation] = contractions[level];
@@ -346,7 +566,7 @@ int SpinContractionSign(const std::vector<SpinContractionPair>& contractions) {
   return parity == 0 ? 1 : -1;
 }
 
-void TraverseSpinContractions(
+inline void TraverseSpinContractions(
     const std::vector<SpinOperator>& operators,
     const std::vector<SpinContractionPair>& candidates,
     std::size_t candidate_begin,
@@ -444,7 +664,7 @@ void TraverseSpinContractions(
   }
 }
 
-void EnumerateSpinWick(
+inline void EnumerateSpinWick(
     const std::vector<SpinOperator>& operators,
     int sign,
     bool skip_contractions,
@@ -492,7 +712,7 @@ void EnumerateSpinWick(
       expansions);
 }
 
-void EnumerateWick(
+inline void EnumerateWick(
     const std::vector<Tensor>& operators,
     bool skip_contractions,
     std::vector<WickExpansion>& expansions) {
@@ -533,7 +753,7 @@ struct SpinFreeRemainder {
   std::optional<Tensor> tensor;
 };
 
-std::optional<SpinFreeRemainder> AnalyzeSpinFreeRemainder(
+inline std::optional<SpinFreeRemainder> AnalyzeSpinFreeRemainder(
     const SpinWickExpansion& expansion,
     std::size_t spin_count) {
   DisjointSet spins(spin_count);
@@ -643,7 +863,7 @@ struct SpinWord {
   int sign = 1;
 };
 
-SpinWord ResolveSpinWord(const Term& source) {
+inline SpinWord ResolveSpinWord(const Term& source) {
   SpinWord word;
   word.scalar = source;
   word.scalar.tensors.clear();
@@ -712,7 +932,7 @@ SpinWord ResolveSpinWord(const Term& source) {
   return word;
 }
 
-std::vector<Term> ExpandSpinFreeTerm(
+inline std::vector<Term> ExpandSpinFreeTerm(
     const Term& source,
     int max_uncontracted,
     bool skip_contractions,
@@ -849,7 +1069,7 @@ std::vector<Term> ExpandSpinFreeTerm(
   return result;
 }
 
-std::vector<IndexDomain> ConcreteDomains(IndexDomain domain) {
+inline std::vector<IndexDomain> ConcreteDomains(IndexDomain domain) {
   std::vector<std::uint8_t> orbital_spaces;
   if (domain.orbital_spaces == 0) {
     orbital_spaces.push_back(0);
@@ -887,7 +1107,7 @@ std::vector<IndexDomain> ConcreteDomains(IndexDomain domain) {
   return result;
 }
 
-void EnumerateDomainAssignments(
+inline void EnumerateDomainAssignments(
     const Term& term,
     const std::vector<Index>& names,
     const std::map<Index, std::vector<IndexDomain>>& options,
@@ -921,7 +1141,7 @@ void EnumerateDomainAssignments(
   }
 }
 
-std::vector<Term> SplitTermDomains(const Term& term) {
+inline std::vector<Term> SplitTermDomains(const Term& term) {
   if (term.coefficient == 0.0 ||
       std::ranges::any_of(term.tensors, [](const auto& tensor) {
         return tensor.symmetry.Elements().empty();
@@ -951,7 +1171,7 @@ std::vector<Term> SplitTermDomains(const Term& term) {
   return result;
 }
 
-void CanonicalizeTensor(Tensor& tensor, double& coefficient) {
+inline void CanonicalizeTensor(Tensor& tensor, double& coefficient) {
   std::vector<Index> best = tensor.indices;
   int best_sign = 1;
   for (const auto& permutation : tensor.symmetry.Elements()) {
@@ -971,7 +1191,7 @@ void CanonicalizeTensor(Tensor& tensor, double& coefficient) {
   coefficient *= best_sign;
 }
 
-int TensorStorageKind(TensorKind kind) {
+inline int TensorStorageKind(TensorKind kind) {
   switch (kind) {
     case TensorKind::kCreation:
       return 0;
@@ -987,14 +1207,14 @@ int TensorStorageKind(TensorKind kind) {
   return 4;
 }
 
-int FermionSortOrder(const Tensor& tensor, std::uint8_t occupied_space) {
+inline int FermionSortOrder(const Tensor& tensor, std::uint8_t occupied_space) {
   const int annihilation = tensor.kind == TensorKind::kAnnihilation;
   const int occupied = !tensor.indices.empty() &&
       (tensor.indices.front().domain.orbital_spaces & occupied_space) != 0;
   return annihilation | ((annihilation ^ occupied) << 1);
 }
 
-bool TensorRepresentativeLess(const Tensor& lhs, const Tensor& rhs) {
+inline bool TensorRepresentativeLess(const Tensor& lhs, const Tensor& rhs) {
   const int comparison = lhs.CompareFermiClass(rhs);
   if (comparison != 0) {
     return comparison < 0;
@@ -1008,7 +1228,7 @@ bool TensorRepresentativeLess(const Tensor& lhs, const Tensor& rhs) {
   return lhs.indices < rhs.indices;
 }
 
-bool TermRepresentativeLess(const Term& lhs, const Term& rhs) {
+inline bool TermRepresentativeLess(const Term& lhs, const Term& rhs) {
   if (lhs.tensors.size() != rhs.tensors.size()) {
     return lhs.tensors.size() < rhs.tensors.size();
   }
@@ -1041,7 +1261,7 @@ bool TermRepresentativeLess(const Term& lhs, const Term& rhs) {
   return lhs.coefficient < rhs.coefficient;
 }
 
-void RemoveDuplicateDeltas(Term& term) {
+inline void RemoveDuplicateDeltas(Term& term) {
   std::set<std::string> deltas;
   std::erase_if(term.tensors, [&](const Tensor& tensor) {
     if (tensor.kind != TensorKind::kDelta) {
@@ -1054,7 +1274,7 @@ void RemoveDuplicateDeltas(Term& term) {
   });
 }
 
-void ReduceDeltas(Term& term) {
+inline void ReduceDeltas(Term& term) {
   std::vector<bool> erased(term.tensors.size(), false);
   for (std::size_t position = 0; position < term.tensors.size(); ++position) {
     const auto& tensor = term.tensors[position];
@@ -1143,14 +1363,14 @@ struct TensorChoice {
   std::set<PrefixLabeling> labelings;
 };
 
-std::string AbstractName(std::size_t ordinal) {
+inline std::string AbstractName(std::size_t ordinal) {
   // Labels are private keys; their ordering precedes ordinary orbital names.
   std::ostringstream name;
   name << '\x01' << std::setw(10) << std::setfill('0') << ordinal;
   return name.str();
 }
 
-TensorChoice ExtendCanonicalPrefix(
+inline TensorChoice ExtendCanonicalPrefix(
     const Tensor& source,
     const std::set<Index>& summed,
     const std::set<PrefixLabeling>& prefixes) {
@@ -1186,7 +1406,7 @@ TensorChoice ExtendCanonicalPrefix(
   return choice;
 }
 
-std::vector<Tensor> CanonicalizeTaggedWord(
+inline std::vector<Tensor> CanonicalizeTaggedWord(
     std::vector<Tensor> operators,
     const std::set<Index>& summed,
     PrefixLabeling& labels) {
@@ -1269,7 +1489,7 @@ std::vector<Tensor> CanonicalizeTaggedWord(
   return result;
 }
 
-Term CanonicalizeTerm(Term term) {
+inline Term CanonicalizeTerm(Term term) {
   std::set<Index> summed(
       term.summed_indices.begin(), term.summed_indices.end());
   std::vector<Tensor> factors;
@@ -1334,7 +1554,7 @@ Term CanonicalizeTerm(Term term) {
   return term;
 }
 
-std::set<std::string> UsedIndexNames(const Term& term) {
+inline std::set<std::string> UsedIndexNames(const Term& term) {
   std::set<std::string> result;
   for (const auto& index : AllIndices(term)) {
     result.insert(index.name);
@@ -1342,7 +1562,7 @@ std::set<std::string> UsedIndexNames(const Term& term) {
   return result;
 }
 
-std::set<std::string> SummedIndexNames(const Term& term) {
+inline std::set<std::string> SummedIndexNames(const Term& term) {
   std::set<std::string> result;
   for (const auto& index : term.summed_indices) {
     result.insert(index.name);
@@ -1350,7 +1570,7 @@ std::set<std::string> SummedIndexNames(const Term& term) {
   return result;
 }
 
-std::string FreshRelatedName(
+inline std::string FreshRelatedName(
     std::string_view source,
     std::set<std::string>& occupied) {
   if (source.empty()) {
@@ -1370,7 +1590,10 @@ std::string FreshRelatedName(
   throw std::invalid_argument("Unable to find a fresh product index name");
 }
 
-void RenameSummedIndex(Term& term, std::string_view name, std::string_view to) {
+inline void RenameSummedIndex(
+    Term& term,
+    std::string_view name,
+    std::string_view to) {
   for (auto& tensor : term.tensors) {
     for (auto& index : tensor.indices) {
       if (index.name == name) {
@@ -1385,7 +1608,7 @@ void RenameSummedIndex(Term& term, std::string_view name, std::string_view to) {
   }
 }
 
-std::pair<Term, Term> AlphaRenameProduct(Term lhs, Term rhs) {
+inline std::pair<Term, Term> AlphaRenameProduct(Term lhs, Term rhs) {
   const auto lhs_used = UsedIndexNames(lhs);
   const auto rhs_used = UsedIndexNames(rhs);
   const auto lhs_summed = SummedIndexNames(lhs);
@@ -1427,7 +1650,7 @@ std::pair<Term, Term> AlphaRenameProduct(Term lhs, Term rhs) {
   return {std::move(lhs), std::move(rhs)};
 }
 
-void FreshenProductSpinTags(Term& lhs, Term& rhs) {
+inline void FreshenProductSpinTags(Term& lhs, Term& rhs) {
   auto counts = [](const Term& term) {
     std::map<int, std::size_t> result;
     for (const auto& tensor : term.tensors) {
@@ -1469,7 +1692,7 @@ struct ParsedLine {
   std::vector<std::pair<std::string, std::vector<std::string>>> tensors;
 };
 
-std::string NormalizeLineBreaks(std::string_view input) {
+inline std::string NormalizeLineBreaks(std::string_view input) {
   std::string result;
   result.reserve(input.size());
   int nesting = 0;
@@ -1506,7 +1729,7 @@ std::string NormalizeLineBreaks(std::string_view input) {
   return result;
 }
 
-std::string ReadDelimited(
+inline std::string ReadDelimited(
     std::string_view line,
     std::size_t& position,
     char open,
@@ -1523,7 +1746,7 @@ std::string ReadDelimited(
   return content;
 }
 
-void SkipSpace(std::string_view line, std::size_t& position) {
+inline void SkipSpace(std::string_view line, std::size_t& position) {
   while (position < line.size() &&
          (line[position] == ' ' || line[position] == '\t' ||
           line[position] == '\r')) {
@@ -1531,7 +1754,7 @@ void SkipSpace(std::string_view line, std::size_t& position) {
   }
 }
 
-ParsedLine ParseLine(std::string_view input) {
+inline ParsedLine ParseLine(std::string_view input) {
   const std::string owned = Trim(input);
   const std::string_view line = owned;
   ParsedLine result;
@@ -1642,7 +1865,7 @@ ParsedLine ParseLine(std::string_view input) {
   return result;
 }
 
-TensorKind ClassifyTensor(std::string_view name, std::size_t rank) {
+inline TensorKind ClassifyTensor(std::string_view name, std::size_t rank) {
   const bool tagged = name.size() > 1 && name[1] >= '0' && name[1] <= '9';
   if (rank == 1 &&
       (name == "C" || name == "Ca" || name == "Cb" ||
@@ -1670,7 +1893,7 @@ TensorKind ClassifyTensor(std::string_view name, std::size_t rank) {
   return TensorKind::kGeneric;
 }
 
-std::string DisplayIndex(const Index& index) {
+inline std::string DisplayIndex(const Index& index) {
   if (!index.name.empty() && index.name.front() == '@') {
     const auto separator = index.name.find_last_of(':');
     return "d" + index.name.substr(separator + 1);
@@ -1678,32 +1901,32 @@ std::string DisplayIndex(const Index& index) {
   return index.name;
 }
 
-} // namespace
+} // namespace wick_detail
 
-std::strong_ordering Index::operator<=>(const Index& other) const {
+inline std::strong_ordering Index::operator<=>(const Index& other) const {
   if (const auto domain_order = domain <=> other.domain; domain_order != 0) {
     return domain_order;
   }
   return name <=> other.name;
 }
 
-bool Index::HasTypes() const noexcept {
+inline bool Index::HasTypes() const noexcept {
   return domain != IndexDomain{};
 }
 
-bool Index::IsShort() const noexcept {
+inline bool Index::IsShort() const noexcept {
   return name.size() == 1;
 }
 
-Index Index::Untyped() const {
+inline Index Index::Untyped() const {
   return {name, {}};
 }
 
-std::size_t Index::Hash() const noexcept {
+inline std::size_t Index::Hash() const noexcept {
   return std::hash<std::string>{}(name);
 }
 
-std::strong_ordering SignedPermutation::operator<=>(
+inline std::strong_ordering SignedPermutation::operator<=>(
     const SignedPermutation& other) const {
   if (sign != other.sign) {
     return other.sign <=> sign;
@@ -1711,14 +1934,14 @@ std::strong_ordering SignedPermutation::operator<=>(
   return order <=> other.order;
 }
 
-SignedPermutation SignedPermutation::Identity(std::size_t rank) {
+inline SignedPermutation SignedPermutation::Identity(std::size_t rank) {
   SignedPermutation result;
   result.order.resize(rank);
   std::iota(result.order.begin(), result.order.end(), 0);
   return result;
 }
 
-SignedPermutation SignedPermutation::Compose(
+inline SignedPermutation SignedPermutation::Compose(
     const SignedPermutation& other) const {
   const auto identity = Identity(order.size());
   for (const auto* permutation : {this, &other}) {
@@ -1730,10 +1953,10 @@ SignedPermutation SignedPermutation::Compose(
           "Cannot compose invalid or differently ranked permutations");
     }
   }
-  return wickqc::symbolic::Compose(*this, other);
+  return wick_detail::Compose(*this, other);
 }
 
-std::size_t SignedPermutation::Hash() const noexcept {
+inline std::size_t SignedPermutation::Hash() const noexcept {
   // An opaque ordered-value hash; its numeric value is not an interchange ID.
   std::size_t value = sign < 0;
   value = 31 * value + order.size();
@@ -1743,15 +1966,18 @@ std::size_t SignedPermutation::Hash() const noexcept {
   return value;
 }
 
-void IndexRegistry::Add(OrbitalSpace space, std::string_view names, Spin spin) {
-  for (const auto& name : SplitIndexNames(names)) {
+inline void IndexRegistry::Add(
+    OrbitalSpace space,
+    std::string_view names,
+    Spin spin) {
+  for (const auto& name : wick_detail::SplitIndexNames(names)) {
     auto& domain = domains_[name];
-    domain.orbital_spaces |= ToMask(space);
-    domain.spins |= ToMask(spin);
+    domain.orbital_spaces |= wick_detail::ToMask(space);
+    domain.spins |= wick_detail::ToMask(spin);
   }
 }
 
-Index IndexRegistry::Resolve(std::string_view name) const {
+inline Index IndexRegistry::Resolve(std::string_view name) const {
   const auto iterator = domains_.find(std::string(name));
   if (iterator == domains_.end()) {
     return {std::string(name), {}};
@@ -1759,25 +1985,25 @@ Index IndexRegistry::Resolve(std::string_view name) const {
   return {iterator->first, iterator->second};
 }
 
-std::vector<Index> IndexRegistry::Parse(std::string_view names) const {
+inline std::vector<Index> IndexRegistry::Parse(std::string_view names) const {
   std::vector<Index> result;
-  for (const auto& name : SplitIndexNames(names)) {
+  for (const auto& name : wick_detail::SplitIndexNames(names)) {
     result.push_back(Resolve(name));
   }
   return result;
 }
 
-std::set<Index> IndexRegistry::ParseSet(std::string_view names) const {
+inline std::set<Index> IndexRegistry::ParseSet(std::string_view names) const {
   const auto parsed = Parse(names);
   return {parsed.begin(), parsed.end()};
 }
 
-std::vector<IndexDomain> IndexRegistry::ConcreteDomains(
+inline std::vector<IndexDomain> IndexRegistry::ConcreteDomains(
     std::string_view name) const {
-  return wickqc::symbolic::ConcreteDomains(Resolve(name).domain);
+  return wick_detail::ConcreteDomains(Resolve(name).domain);
 }
 
-TensorSymmetry::TensorSymmetry(
+inline TensorSymmetry::TensorSymmetry(
     std::size_t rank,
     const std::vector<SignedPermutation>& generators) {
   SignedPermutation identity;
@@ -1801,7 +2027,7 @@ TensorSymmetry::TensorSymmetry(
           (generator.sign != 1 && generator.sign != -1)) {
         throw std::invalid_argument("Invalid tensor-symmetry generator");
       }
-      auto candidate = Compose(elements_[position], generator);
+      auto candidate = wick_detail::Compose(elements_[position], generator);
       if (visited.insert(candidate).second) {
         elements_.push_back(std::move(candidate));
       }
@@ -1809,26 +2035,26 @@ TensorSymmetry::TensorSymmetry(
   }
 }
 
-TensorSymmetry TensorSymmetry::None(std::size_t rank) {
+inline TensorSymmetry TensorSymmetry::None(std::size_t rank) {
   return TensorSymmetry(rank, {});
 }
 
-const std::vector<SignedPermutation>& TensorSymmetry::Elements() const {
+inline const std::vector<SignedPermutation>& TensorSymmetry::Elements() const {
   return elements_;
 }
 
-TensorSymmetry TensorSymmetry::TwoSymmetric() {
+inline TensorSymmetry TensorSymmetry::TwoSymmetric() {
   return TensorSymmetry(2, {{{1, 0}, 1}});
 }
 
-TensorSymmetry TensorSymmetry::TwoAntisymmetric() {
+inline TensorSymmetry TensorSymmetry::TwoAntisymmetric() {
   auto swap = SignedPermutation::Identity(2);
   std::ranges::reverse(swap.order);
   swap.sign = -1;
   return TensorSymmetry(2, {swap});
 }
 
-TensorSymmetry TensorSymmetry::CanonicalTransformation() {
+inline TensorSymmetry TensorSymmetry::CanonicalTransformation() {
   auto transpose = SignedPermutation::Identity(4);
   std::rotate(
       transpose.order.begin(),
@@ -1841,7 +2067,7 @@ TensorSymmetry TensorSymmetry::CanonicalTransformation() {
   return TensorSymmetry(4, {transpose, exchange});
 }
 
-TensorSymmetry TensorSymmetry::PairAntisymmetric(std::size_t order) {
+inline TensorSymmetry TensorSymmetry::PairAntisymmetric(std::size_t order) {
   if (order > std::numeric_limits<std::size_t>::max() / 2) {
     throw std::length_error("Pair-antisymmetric tensor rank overflows size_t");
   }
@@ -1857,7 +2083,7 @@ TensorSymmetry TensorSymmetry::PairAntisymmetric(std::size_t order) {
   return TensorSymmetry(2 * order, generators);
 }
 
-TensorSymmetry TensorSymmetry::All(std::size_t rank) {
+inline TensorSymmetry TensorSymmetry::All(std::size_t rank) {
   auto permutation = SignedPermutation::Identity(rank);
   std::vector<SignedPermutation> elements;
   do {
@@ -1867,22 +2093,24 @@ TensorSymmetry TensorSymmetry::All(std::size_t rank) {
   return FromElements(std::move(elements));
 }
 
-TensorSymmetry TensorSymmetry::FourAntisymmetric() {
+inline TensorSymmetry TensorSymmetry::FourAntisymmetric() {
   return TensorSymmetry(
       4, {{{2, 3, 0, 1}, 1}, {{1, 0, 2, 3}, -1}, {{0, 1, 3, 2}, -1}});
 }
 
-TensorSymmetry TensorSymmetry::QuantumChemistryChemists() {
+inline TensorSymmetry TensorSymmetry::QuantumChemistryChemists() {
   return TensorSymmetry(
       4, {{{2, 3, 0, 1}, 1}, {{1, 0, 2, 3}, 1}, {{0, 1, 3, 2}, 1}});
 }
 
-TensorSymmetry TensorSymmetry::QuantumChemistryPhysicists() {
+inline TensorSymmetry TensorSymmetry::QuantumChemistryPhysicists() {
   return TensorSymmetry(
       4, {{{0, 3, 2, 1}, 1}, {{2, 1, 0, 3}, 1}, {{1, 0, 3, 2}, 1}});
 }
 
-TensorSymmetry TensorSymmetry::SpinFree(std::size_t order, bool hermitian) {
+inline TensorSymmetry TensorSymmetry::SpinFree(
+    std::size_t order,
+    bool hermitian) {
   std::vector<SignedPermutation> generators;
   for (std::size_t other = 1; other < order; ++other) {
     SignedPermutation permutation;
@@ -1906,15 +2134,16 @@ TensorSymmetry TensorSymmetry::SpinFree(std::size_t order, bool hermitian) {
   return TensorSymmetry(order * 2, generators);
 }
 
-void SymmetryRegistry::Add(
+inline void SymmetryRegistry::Add(
     std::string name,
     std::size_t rank,
     TensorSymmetry symmetry) {
   symmetries_[{std::move(name), rank}] = std::move(symmetry);
 }
 
-TensorSymmetry SymmetryRegistry::Lookup(std::string_view name, std::size_t rank)
-    const {
+inline TensorSymmetry SymmetryRegistry::Lookup(
+    std::string_view name,
+    std::size_t rank) const {
   const auto iterator = symmetries_.find({std::string(name), rank});
   if (iterator != symmetries_.end()) {
     return iterator->second;
@@ -1922,15 +2151,15 @@ TensorSymmetry SymmetryRegistry::Lookup(std::string_view name, std::size_t rank)
   return TensorSymmetry::None(rank);
 }
 
-bool Tensor::IsFermionOperator() const noexcept {
+inline bool Tensor::IsFermionOperator() const noexcept {
   return kind == TensorKind::kCreation || kind == TensorKind::kAnnihilation;
 }
 
-bool Tensor::operator==(const Tensor& other) const {
+inline bool Tensor::operator==(const Tensor& other) const {
   return name == other.name && kind == other.kind && indices == other.indices;
 }
 
-int Tensor::CompareFermiClass(const Tensor& rhs) const {
+inline int Tensor::CompareFermiClass(const Tensor& rhs) const {
   constexpr auto inactive = static_cast<std::uint8_t>(OrbitalSpace::kInactive);
   constexpr auto active = static_cast<std::uint8_t>(OrbitalSpace::kActive);
   constexpr auto external = static_cast<std::uint8_t>(OrbitalSpace::kExternal);
@@ -1944,13 +2173,13 @@ int Tensor::CompareFermiClass(const Tensor& rhs) const {
       (occupied_space == active && std::max(lhs_space, rhs_space) == active)) {
     occupied_space = inactive;
   }
-  const int lhs_order = FermionSortOrder(*this, occupied_space);
-  const int rhs_order = FermionSortOrder(rhs, occupied_space);
+  const int lhs_order = wick_detail::FermionSortOrder(*this, occupied_space);
+  const int rhs_order = wick_detail::FermionSortOrder(rhs, occupied_space);
   return (lhs_order > rhs_order) - (lhs_order < rhs_order);
 }
 
-std::vector<std::map<std::string, std::string>> Tensor::IndexPermutations()
-    const {
+inline std::vector<std::map<std::string, std::string>> Tensor::
+    IndexPermutations() const {
   std::map<IndexDomain, std::vector<Index>> groups;
   std::map<std::string, std::string> identity;
   for (const auto& index : indices) {
@@ -1975,7 +2204,7 @@ std::vector<std::map<std::string, std::string>> Tensor::IndexPermutations()
   return result;
 }
 
-std::map<std::string, std::string> Tensor::IndexMapTo(
+inline std::map<std::string, std::string> Tensor::IndexMapTo(
     const Tensor& other) const {
   if (indices.size() != other.indices.size()) {
     return {};
@@ -1998,17 +2227,17 @@ std::map<std::string, std::string> Tensor::IndexMapTo(
   }
   return names;
 }
-bool Tensor::operator<(const Tensor& other) const {
-  return TensorRepresentativeLess(*this, other);
+inline bool Tensor::operator<(const Tensor& other) const {
+  return wick_detail::TensorRepresentativeLess(*this, other);
 }
 
-Tensor Tensor::Canonicalize(double& coefficient) const {
+inline Tensor Tensor::Canonicalize(double& coefficient) const {
   Tensor result = *this;
-  CanonicalizeTensor(result, coefficient);
+  wick_detail::CanonicalizeTensor(result, coefficient);
   return result;
 }
 
-Tensor Tensor::RestrictSymmetry() const {
+inline Tensor Tensor::RestrictSymmetry() const {
   Tensor result = *this;
   std::vector<SignedPermutation> compatible;
   for (const auto& permutation : symmetry.Elements()) {
@@ -2016,7 +2245,7 @@ Tensor Tensor::RestrictSymmetry() const {
     bool valid = true;
     for (std::size_t i = 0; i < indices.size(); ++i) {
       valid = valid &&
-          ContractionDomainsMatch(
+          wick_detail::ContractionDomainsMatch(
                   indices[i].domain, permuted.indices[i].domain);
     }
     if (valid &&
@@ -2028,7 +2257,8 @@ Tensor Tensor::RestrictSymmetry() const {
   return result;
 }
 
-std::string Tensor::ToString(const SignedPermutation& permutation) const {
+inline std::string Tensor::ToString(
+    const SignedPermutation& permutation) const {
   const auto permuted = Permute(permutation);
   const std::string separator =
       std::ranges::all_of(indices, &Index::IsShort) ? "" : " ";
@@ -2044,7 +2274,7 @@ std::string Tensor::ToString(const SignedPermutation& permutation) const {
   return output.str();
 }
 
-std::string Tensor::PermutationRules() const {
+inline std::string Tensor::PermutationRules() const {
   std::string result;
   for (const auto& permutation : symmetry.Elements()) {
     if (!result.empty()) {
@@ -2055,7 +2285,7 @@ std::string Tensor::PermutationRules() const {
   return result;
 }
 
-Tensor Tensor::Permute(const SignedPermutation& permutation) const {
+inline Tensor Tensor::Permute(const SignedPermutation& permutation) const {
   auto sorted = permutation.order;
   std::ranges::sort(sorted);
   if (sorted.size() != indices.size()) {
@@ -2071,11 +2301,11 @@ Tensor Tensor::Permute(const SignedPermutation& permutation) const {
   return result;
 }
 
-bool Term::operator==(const Term& other) const {
+inline bool Term::operator==(const Term& other) const {
   return coefficient == other.coefficient && SameForm(other);
 }
 
-bool Term::operator<(const Term& other) const {
+inline bool Term::operator<(const Term& other) const {
   auto left = *this;
   auto right = other;
   for (auto* term : {&left, &right}) {
@@ -2084,10 +2314,10 @@ bool Term::operator<(const Term& other) const {
         std::unique(term->summed_indices.begin(), term->summed_indices.end()),
         term->summed_indices.end());
   }
-  return TermRepresentativeLess(left, right);
+  return wick_detail::TermRepresentativeLess(left, right);
 }
 
-std::set<Index> Term::UsedIndices() const {
+inline std::set<Index> Term::UsedIndices() const {
   std::set<Index> result;
   for (const auto& tensor : tensors) {
     result.insert(tensor.indices.begin(), tensor.indices.end());
@@ -2095,7 +2325,7 @@ std::set<Index> Term::UsedIndices() const {
   return result;
 }
 
-std::set<std::string> Term::UsedIndexNames() const {
+inline std::set<std::string> Term::UsedIndexNames() const {
   std::set<std::string> result;
   for (const auto& index : UsedIndices()) {
     result.insert(index.name);
@@ -2103,11 +2333,11 @@ std::set<std::string> Term::UsedIndexNames() const {
   return result;
 }
 
-std::set<std::string> Term::SummedIndexNames() const {
-  return wickqc::symbolic::SummedIndexNames(*this);
+inline std::set<std::string> Term::SummedIndexNames() const {
+  return wick_detail::SummedIndexNames(*this);
 }
 
-std::map<int, int> Term::SpinTagCounts() const {
+inline std::map<int, int> Term::SpinTagCounts() const {
   std::map<int, int> result;
   for (const auto& tensor : tensors) {
     if (const auto tag = tensor.SpinTag(); tag >= 0) {
@@ -2117,17 +2347,18 @@ std::map<int, int> Term::SpinTagCounts() const {
   return result;
 }
 
-bool Term::HasOperatorsIn(OrbitalSpace space) const {
+inline bool Term::HasOperatorsIn(OrbitalSpace space) const {
   return std::ranges::any_of(tensors, [&](const auto& tensor) {
     return (tensor.kind == TensorKind::kSpinFree ||
             tensor.IsFermionOperator()) &&
         std::ranges::any_of(tensor.indices, [&](const auto& index) {
-             return (index.domain.orbital_spaces & ToMask(space)) != 0;
+             return (index.domain.orbital_spaces &
+                     wick_detail::ToMask(space)) != 0;
            });
   });
 }
 
-bool Term::SameForm(const Term& other) const {
+inline bool Term::SameForm(const Term& other) const {
   if (tensors != other.tensors) {
     return false;
   }
@@ -2140,25 +2371,25 @@ bool Term::SameForm(const Term& other) const {
   return left == right;
 }
 
-Term Term::Canonicalize() const {
-  return CanonicalizeTerm(*this);
+inline Term Term::Canonicalize() const {
+  return wick_detail::CanonicalizeTerm(*this);
 }
 
-Term Term::SortFactors() const {
+inline Term Term::SortFactors() const {
   Term result = *this;
   for (auto& tensor : result.tensors) {
-    CanonicalizeTensor(tensor, result.coefficient);
+    wick_detail::CanonicalizeTensor(tensor, result.coefficient);
   }
   const auto end = std::stable_partition(
       result.tensors.begin(), result.tensors.end(), [](const auto& tensor) {
         return tensor.kind == TensorKind::kGeneric ||
             tensor.kind == TensorKind::kDelta;
       });
-  std::sort(result.tensors.begin(), end, TensorRepresentativeLess);
+  std::sort(result.tensors.begin(), end, wick_detail::TensorRepresentativeLess);
   return result;
 }
 
-int Tensor::SpinTag() const {
+inline int Tensor::SpinTag() const {
   if (!IsFermionOperator() || name.size() < 2 || name[1] < '0' ||
       name[1] > '9') {
     return -1;
@@ -2166,13 +2397,13 @@ int Tensor::SpinTag() const {
   return std::stoi(name.substr(1));
 }
 
-void Tensor::SetSpinTag(int tag) {
+inline void Tensor::SetSpinTag(int tag) {
   if (IsFermionOperator() && (name.size() == 1 || SpinTag() >= 0)) {
     name = name.substr(0, 1) + (tag < 0 ? std::string{} : std::to_string(tag));
   }
 }
 
-Tensor Tensor::Parse(
+inline Tensor Tensor::Parse(
     std::string_view text,
     const IndexRegistry& indices,
     const SymmetryRegistry& symmetries) {
@@ -2186,37 +2417,38 @@ Tensor Tensor::Parse(
   return expression.Terms().front().tensors.front();
 }
 
-Expression::Expression(Term term) : terms_{std::move(term)} {}
+inline Expression::Expression(Term term) : terms_{std::move(term)} {}
 
-Expression::Expression(std::vector<Term> terms) : terms_(std::move(terms)) {}
+inline Expression::Expression(std::vector<Term> terms)
+    : terms_(std::move(terms)) {}
 
-const std::vector<Term>& Expression::Terms() const noexcept {
+inline const std::vector<Term>& Expression::Terms() const noexcept {
   return terms_;
 }
 
-bool Expression::operator==(const Expression& other) const {
+inline bool Expression::operator==(const Expression& other) const {
   return terms_ == other.terms_;
 }
 
-bool Expression::operator<(const Expression& other) const {
+inline bool Expression::operator<(const Expression& other) const {
   return std::lexicographical_compare(
       terms_.begin(), terms_.end(), other.terms_.begin(), other.terms_.end());
 }
 
-bool Expression::Empty() const noexcept {
+inline bool Expression::Empty() const noexcept {
   return terms_.empty();
 }
 
-Expression Expression::Parse(
+inline Expression Expression::Parse(
     std::string_view text,
     const IndexRegistry& indices,
     const SymmetryRegistry& symmetries) {
   std::vector<Term> terms;
-  std::istringstream input(NormalizeLineBreaks(text));
+  std::istringstream input(wick_detail::NormalizeLineBreaks(text));
   std::string line;
   while (std::getline(input, line)) {
-    const auto parsed = ParseLine(line);
-    if (Trim(line).empty()) {
+    const auto parsed = wick_detail::ParseLine(line);
+    if (wick_detail::Trim(line).empty()) {
       continue;
     }
     Term term;
@@ -2244,7 +2476,7 @@ Expression Expression::Parse(
         }
         tensor.indices.push_back(std::move(index));
       }
-      tensor.kind = ClassifyTensor(name, tensor.indices.size());
+      tensor.kind = wick_detail::ClassifyTensor(name, tensor.indices.size());
       if (tensor.kind == TensorKind::kDelta) {
         tensor.symmetry = TensorSymmetry::TwoSymmetric();
       } else if (tensor.kind == TensorKind::kSpinFree) {
@@ -2262,7 +2494,7 @@ Expression Expression::Parse(
   return Expression(std::move(terms));
 }
 
-std::pair<Tensor, Expression> Expression::ParseDefinition(
+inline std::pair<Tensor, Expression> Expression::ParseDefinition(
     std::string_view text,
     const IndexRegistry& indices,
     const SymmetryRegistry& symmetries) {
@@ -2276,10 +2508,10 @@ std::pair<Tensor, Expression> Expression::ParseDefinition(
       Parse(text.substr(separator + 1), indices, symmetries)};
 }
 
-Expression Expression::SplitIndexDomains() const {
+inline Expression Expression::SplitIndexDomains() const {
   std::vector<Term> result;
   for (const auto& source : terms_) {
-    auto split = SplitTermDomains(source);
+    auto split = wick_detail::SplitTermDomains(source);
     result.insert(
         result.end(),
         std::make_move_iterator(split.begin()),
@@ -2288,7 +2520,7 @@ Expression Expression::SplitIndexDomains() const {
   return Expression(std::move(result));
 }
 
-Expression Expression::Expand(
+inline Expression Expression::Expand(
     int max_uncontracted,
     bool skip_contractions,
     bool compact_spin_free) const {
@@ -2296,7 +2528,7 @@ Expression Expression::Expand(
       max_uncontracted, skip_contractions, compact_spin_free);
 }
 
-Expression Expression::NormalOrder(
+inline Expression Expression::NormalOrder(
     int max_uncontracted,
     bool skip_contractions,
     bool compact_spin_free) const {
@@ -2305,7 +2537,7 @@ Expression Expression::NormalOrder(
     if (std::ranges::any_of(concrete.tensors, [](const Tensor& tensor) {
           return tensor.kind == TensorKind::kSpinFree || tensor.SpinTag() >= 0;
         })) {
-      auto expanded = ExpandSpinFreeTerm(
+      auto expanded = wick_detail::ExpandSpinFreeTerm(
           concrete, max_uncontracted, skip_contractions, compact_spin_free);
       result.insert(
           result.end(),
@@ -2327,8 +2559,8 @@ Expression Expression::NormalOrder(
       continue;
     }
 
-    std::vector<WickExpansion> expansions;
-    EnumerateWick(operators, skip_contractions, expansions);
+    std::vector<wick_detail::WickExpansion> expansions;
+    wick_detail::EnumerateWick(operators, skip_contractions, expansions);
     for (auto& expansion : expansions) {
       if (max_uncontracted >= 0 &&
           static_cast<int>(expansion.uncontracted.size()) > max_uncontracted) {
@@ -2336,7 +2568,7 @@ Expression Expression::NormalOrder(
       }
       Term term = base;
       term.coefficient *= expansion.sign;
-      AppendDeltas(term, expansion.deltas);
+      wick_detail::AppendDeltas(term, expansion.deltas);
       term.tensors.insert(
           term.tensors.end(),
           expansion.uncontracted.begin(),
@@ -2347,7 +2579,7 @@ Expression Expression::NormalOrder(
   return Expression(std::move(result));
 }
 
-Expression Expression::SortFactors() const {
+inline Expression Expression::SortFactors() const {
   auto result = terms_;
   for (auto& term : result) {
     term = term.SortFactors();
@@ -2355,15 +2587,15 @@ Expression Expression::SortFactors() const {
   return Expression(std::move(result));
 }
 
-Expression Expression::SimplifyDeltas() const {
+inline Expression Expression::SimplifyDeltas() const {
   auto result = terms_;
   for (auto& term : result) {
-    ReduceDeltas(term);
+    wick_detail::ReduceDeltas(term);
   }
   return Expression(std::move(result));
 }
 
-Expression Expression::RemoveZeros(double tolerance) const {
+inline Expression Expression::RemoveZeros(double tolerance) const {
   if (tolerance < 0 || !std::isfinite(tolerance)) {
     throw std::invalid_argument(
         "A simplification tolerance must be finite and nonnegative");
@@ -2375,11 +2607,11 @@ Expression Expression::RemoveZeros(double tolerance) const {
   return Expression(std::move(result));
 }
 
-Expression Expression::Simplify(double tolerance) const {
+inline Expression Expression::Simplify(double tolerance) const {
   return SimplifyDeltas().RemoveZeros(tolerance).MergeTerms(tolerance);
 }
 
-Expression Expression::MergeTerms(double tolerance) const {
+inline Expression Expression::MergeTerms(double tolerance) const {
   if (tolerance < 0 || !std::isfinite(tolerance)) {
     throw std::invalid_argument(
         "A simplification tolerance must be finite and nonnegative");
@@ -2395,11 +2627,11 @@ Expression Expression::MergeTerms(double tolerance) const {
   for (auto term : terms_) {
     auto unit = term;
     unit.coefficient = 1.0;
-    auto canonical = CanonicalizeTerm(std::move(unit));
+    auto canonical = wick_detail::CanonicalizeTerm(std::move(unit));
     if (canonical.coefficient == 0.0) {
       continue;
     }
-    const std::string key = TermKey(canonical);
+    const std::string key = wick_detail::TermKey(canonical);
     const double representative_sign = canonical.coefficient;
     canonical.coefficient *= term.coefficient;
     auto [iterator, inserted] =
@@ -2422,11 +2654,11 @@ Expression Expression::MergeTerms(double tolerance) const {
       simplified.push_back(std::move(aggregate.representative));
     }
   }
-  std::ranges::sort(simplified, TermRepresentativeLess);
+  std::ranges::sort(simplified, wick_detail::TermRepresentativeLess);
   return Expression(std::move(simplified));
 }
 
-Expression Expression::Conjugate() const {
+inline Expression Expression::Conjugate() const {
   auto terms = terms_;
   for (auto& term : terms) {
     std::vector<Tensor> adjoint_operators;
@@ -2460,7 +2692,7 @@ Expression Expression::Conjugate() const {
   return Expression(std::move(terms));
 }
 
-Expression Expression::RenameIndices(
+inline Expression Expression::RenameIndices(
     const std::map<std::string, std::string>& names) const {
   for (const auto& [from, to] : names) {
     if (from.empty() || to.empty()) {
@@ -2490,12 +2722,12 @@ Expression Expression::RenameIndices(
   return Expression(std::move(result));
 }
 
-Expression Expression::Substitute(
+inline Expression Expression::Substitute(
     const std::map<std::string, std::pair<Tensor, Expression>>& definitions)
     const {
   std::vector<Term> result;
   for (const auto& source : terms_) {
-    const auto original_names = UsedIndexNames(source);
+    const auto original_names = wick_detail::UsedIndexNames(source);
     std::vector<Term> partials{
         Term{source.coefficient, {}, source.summed_indices}};
     for (const auto& tensor : source.tensors) {
@@ -2511,7 +2743,7 @@ Expression Expression::Substitute(
       std::vector<Term> expanded;
       for (const auto& partial : partials) {
         for (const auto& value : replacement.Terms()) {
-          auto occupied = UsedIndexNames(partial);
+          auto occupied = wick_detail::UsedIndexNames(partial);
           occupied.insert(original_names.begin(), original_names.end());
           std::map<Index, Index> bindings;
           for (std::size_t slot = 0; slot < tensor.indices.size(); ++slot) {
@@ -2537,7 +2769,7 @@ Expression Expression::Substitute(
             }
             Index fresh = dummy;
             if (occupied.contains(fresh.name)) {
-              fresh.name = FreshRelatedName(dummy.name, occupied);
+              fresh.name = wick_detail::FreshRelatedName(dummy.name, occupied);
             } else {
               occupied.insert(fresh.name);
             }
@@ -2568,7 +2800,7 @@ Expression Expression::Substitute(
   return Expression(std::move(result));
 }
 
-Expression Expression::RemoveExternal() const {
+inline Expression Expression::RemoveExternal() const {
   auto terms = terms_;
   std::erase_if(terms, [](const Term& term) {
     return term.HasOperatorsIn(OrbitalSpace::kExternal);
@@ -2576,7 +2808,7 @@ Expression Expression::RemoveExternal() const {
   return Expression(std::move(terms));
 }
 
-Expression Expression::RemoveInactive() const {
+inline Expression Expression::RemoveInactive() const {
   auto terms = terms_;
   std::erase_if(terms, [](const Term& term) {
     return term.HasOperatorsIn(OrbitalSpace::kInactive);
@@ -2584,7 +2816,7 @@ Expression Expression::RemoveInactive() const {
   return Expression(std::move(terms));
 }
 
-Expression Expression::AddSpinFreeTransposeSymmetry() const {
+inline Expression Expression::AddSpinFreeTransposeSymmetry() const {
   auto terms = terms_;
   for (auto& term : terms) {
     if (std::ranges::count_if(term.tensors, [](const Tensor& tensor) {
@@ -2602,24 +2834,24 @@ Expression Expression::AddSpinFreeTransposeSymmetry() const {
   return Expression(std::move(terms));
 }
 
-Expression operator+(const Expression& lhs, const Expression& rhs) {
+inline Expression operator+(const Expression& lhs, const Expression& rhs) {
   std::vector<Term> terms = lhs.terms_;
   terms.insert(terms.end(), rhs.terms_.begin(), rhs.terms_.end());
   return Expression(std::move(terms));
 }
 
-Expression operator-(const Expression& lhs, const Expression& rhs) {
+inline Expression operator-(const Expression& lhs, const Expression& rhs) {
   return lhs + (-1.0 * rhs);
 }
 
-Expression operator*(const Expression& lhs, const Expression& rhs) {
+inline Expression operator*(const Expression& lhs, const Expression& rhs) {
   std::vector<Term> products;
   products.reserve(lhs.terms_.size() * rhs.terms_.size());
   for (const auto& original_lhs_term : lhs.terms_) {
     for (const auto& original_rhs_term : rhs.terms_) {
       auto [lhs_term, rhs_term] =
-          AlphaRenameProduct(original_lhs_term, original_rhs_term);
-      FreshenProductSpinTags(lhs_term, rhs_term);
+          wick_detail::AlphaRenameProduct(original_lhs_term, original_rhs_term);
+      wick_detail::FreshenProductSpinTags(lhs_term, rhs_term);
       Term product = lhs_term;
       product.coefficient *= rhs_term.coefficient;
       product.tensors.insert(
@@ -2636,7 +2868,7 @@ Expression operator*(const Expression& lhs, const Expression& rhs) {
   return Expression(std::move(products));
 }
 
-Expression operator*(double scalar, const Expression& expression) {
+inline Expression operator*(double scalar, const Expression& expression) {
   auto terms = expression.terms_;
   for (auto& term : terms) {
     term.coefficient *= scalar;
@@ -2644,11 +2876,13 @@ Expression operator*(double scalar, const Expression& expression) {
   return Expression(std::move(terms));
 }
 
-Expression operator*(const Expression& expression, double scalar) {
+inline Expression operator*(const Expression& expression, double scalar) {
   return scalar * expression;
 }
 
-Expression FullySummedProduct(const Expression& lhs, const Expression& rhs) {
+inline Expression FullySummedProduct(
+    const Expression& lhs,
+    const Expression& rhs) {
   auto terms = (lhs * rhs).Terms();
   for (auto& term : terms) {
     std::set<Index> bound(
@@ -2661,11 +2895,13 @@ Expression FullySummedProduct(const Expression& lhs, const Expression& rhs) {
   return Expression(std::move(terms));
 }
 
-Expression Commutator(const Expression& lhs, const Expression& rhs) {
+inline Expression Commutator(const Expression& lhs, const Expression& rhs) {
   return lhs * rhs - rhs * lhs;
 }
 
-std::ostream& operator<<(std::ostream& output, const Expression& expression) {
+inline std::ostream& operator<<(
+    std::ostream& output,
+    const Expression& expression) {
   output << "Expression{" << expression.terms_.size() << " terms";
   for (const auto& term : expression.terms_) {
     output << "\n  " << std::showpos << std::setprecision(12)
@@ -2673,7 +2909,7 @@ std::ostream& operator<<(std::ostream& output, const Expression& expression) {
     if (!term.summed_indices.empty()) {
       output << " SUM<";
       for (const auto& index : term.summed_indices) {
-        output << DisplayIndex(index);
+        output << wick_detail::DisplayIndex(index);
       }
       output << '>';
     }
@@ -2683,13 +2919,272 @@ std::ostream& operator<<(std::ostream& output, const Expression& expression) {
         if (index != 0) {
           output << ',';
         }
-        output << DisplayIndex(tensor.indices[index]);
+        output << wick_detail::DisplayIndex(tensor.indices[index]);
       }
       output << ']';
     }
   }
   output << "\n}";
   return output;
+}
+
+namespace serialization_detail {
+
+// This codec describes the reference's native binary data layout. It depends
+// on the host ABI (size_t, endian order, bool and double representation).
+// Production symbolic types and algorithms do not depend on reference types.
+class BinaryWriter {
+ public:
+  explicit BinaryWriter(std::ostream& output) : output_(output) {}
+
+  template <typename T>
+  void Scalar(const T& value) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    Bytes(reinterpret_cast<const char*>(&value), sizeof(T));
+  }
+
+  void String(const std::string& value) {
+    Scalar(value.size());
+    Bytes(value.data(), value.size());
+  }
+
+  template <typename Range>
+  void Objects(const Range& values) {
+    Scalar(values.size());
+    for (const auto& value : values) {
+      value.Save(output_);
+    }
+  }
+
+ private:
+  void Bytes(const char* data, std::size_t size) {
+    if (size >
+        static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+      throw std::length_error("Wick binary field exceeds stream capacity");
+    }
+    output_.write(data, static_cast<std::streamsize>(size));
+    if (!output_) {
+      throw std::runtime_error("Unable to write Wick binary data");
+    }
+  }
+
+  std::ostream& output_;
+};
+
+class BinaryReader {
+ public:
+  explicit BinaryReader(std::istream& input) : input_(input) {}
+
+  template <typename T>
+  T Scalar() {
+    static_assert(std::is_trivially_copyable_v<T>);
+    T value{};
+    Bytes(reinterpret_cast<char*>(&value), sizeof(T));
+    return value;
+  }
+
+  std::string String() {
+    auto remaining = Scalar<std::size_t>();
+    std::array<char, 4096> buffer{};
+    std::string value;
+    // Read incrementally so a corrupt length cannot trigger a huge allocation
+    // before the stream has supplied its payload.
+    while (remaining != 0) {
+      const auto size = std::min(remaining, buffer.size());
+      Bytes(buffer.data(), size);
+      value.append(buffer.data(), size);
+      remaining -= size;
+    }
+    return value;
+  }
+
+  template <typename T>
+  std::vector<T> Objects() {
+    const auto count = Scalar<std::size_t>();
+    std::vector<T> values;
+    values.reserve(std::min(count, std::size_t{4096}));
+    for (std::size_t i = 0; i < count; ++i) {
+      values.push_back(T::Load(input_));
+    }
+    return values;
+  }
+
+ private:
+  void Bytes(char* data, std::size_t size) {
+    input_.read(data, static_cast<std::streamsize>(size));
+    if (!input_) {
+      throw std::runtime_error("Truncated or unreadable Wick binary data");
+    }
+  }
+
+  std::istream& input_;
+};
+
+inline constexpr std::array<TensorKind, 5> kTensorWireKinds = {
+    TensorKind::kCreation,
+    TensorKind::kAnnihilation,
+    TensorKind::kSpinFree,
+    TensorKind::kDelta,
+    TensorKind::kGeneric};
+
+inline void ValidatePermutation(const SignedPermutation& permutation) {
+  auto sorted = permutation.order;
+  std::ranges::sort(sorted);
+  for (std::size_t i = 0; i < sorted.size(); ++i) {
+    if (sorted[i] != i) {
+      throw std::invalid_argument("Invalid permutation in Wick binary data");
+    }
+  }
+  if (permutation.sign != 1 && permutation.sign != -1) {
+    throw std::invalid_argument("Invalid permutation sign in Wick binary data");
+  }
+}
+} // namespace serialization_detail
+
+inline void Index::Save(std::ostream& output) const {
+  serialization_detail::BinaryWriter writer(output);
+  writer.String(name);
+  if (domain.orbital_spaces > 15 || domain.spins > 3) {
+    throw std::invalid_argument(
+        "Index domain cannot be encoded in Wick binary data");
+  }
+  writer.Scalar(
+      static_cast<std::uint8_t>(domain.orbital_spaces | (domain.spins << 4)));
+}
+
+inline Index Index::Load(std::istream& input) {
+  serialization_detail::BinaryReader reader(input);
+  Index result;
+  result.name = reader.String();
+  const auto flags = reader.Scalar<std::uint8_t>();
+  if (flags > 63) {
+    throw std::invalid_argument("Invalid index domain in Wick binary data");
+  }
+  result.domain = {
+      static_cast<std::uint8_t>(flags & 15U),
+      static_cast<std::uint8_t>(flags >> 4)};
+  return result;
+}
+
+inline void SignedPermutation::Save(std::ostream& output) const {
+  serialization_detail::ValidatePermutation(*this);
+  serialization_detail::BinaryWriter writer(output);
+  writer.Scalar(order.size());
+  for (auto slot : order) {
+    if (slot >
+        static_cast<std::size_t>(std::numeric_limits<std::int16_t>::max())) {
+      throw std::invalid_argument(
+          "Permutation rank exceeds the Wick binary representation");
+    }
+    writer.Scalar(static_cast<std::int16_t>(slot));
+  }
+  writer.Scalar(sign < 0);
+}
+
+inline SignedPermutation SignedPermutation::Load(std::istream& input) {
+  serialization_detail::BinaryReader reader(input);
+  const auto count = reader.Scalar<std::size_t>();
+  if (count >
+      static_cast<std::size_t>(std::numeric_limits<std::int16_t>::max()) + 1) {
+    throw std::invalid_argument("Invalid permutation rank in Wick binary data");
+  }
+  SignedPermutation result;
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto slot = reader.Scalar<std::int16_t>();
+    if (slot < 0) {
+      throw std::invalid_argument(
+          "Negative permutation slot in Wick binary data");
+    }
+    result.order.push_back(static_cast<std::size_t>(slot));
+  }
+  // The native bool representation used by the reference on this ABI is a
+  // single byte. Reading into an integer also validates malformed bool bytes.
+  static_assert(sizeof(bool) == sizeof(std::uint8_t));
+  const auto negative = reader.Scalar<std::uint8_t>();
+  if (negative > 1) {
+    throw std::invalid_argument(
+        "Invalid permutation parity in Wick binary data");
+  }
+  result.sign = negative == 0 ? 1 : -1;
+  serialization_detail::ValidatePermutation(result);
+  return result;
+}
+
+inline TensorSymmetry TensorSymmetry::FromElements(
+    std::vector<SignedPermutation> elements) {
+  for (const auto& element : elements) {
+    serialization_detail::ValidatePermutation(element);
+    if (element.order.size() != elements.front().order.size()) {
+      throw std::invalid_argument(
+          "Tensor symmetry contains inconsistent ranks");
+    }
+  }
+  TensorSymmetry result;
+  result.elements_ = std::move(elements);
+  return result;
+}
+
+inline void Tensor::Save(std::ostream& output) const {
+  serialization_detail::BinaryWriter writer(output);
+  writer.String(name);
+  writer.Objects(indices);
+  writer.Objects(symmetry.Elements());
+  const auto kind_position =
+      std::ranges::find(serialization_detail::kTensorWireKinds, kind);
+  if (kind_position == serialization_detail::kTensorWireKinds.end()) {
+    throw std::invalid_argument("Invalid tensor kind in Wick binary data");
+  }
+  writer.Scalar(
+      static_cast<std::uint8_t>(
+          kind_position - serialization_detail::kTensorWireKinds.begin()));
+}
+
+inline Tensor Tensor::Load(std::istream& input) {
+  serialization_detail::BinaryReader reader(input);
+  Tensor result;
+  result.name = reader.String();
+  result.indices = reader.Objects<Index>();
+  auto permutations = reader.Objects<SignedPermutation>();
+  for (const auto& permutation : permutations) {
+    if (permutation.order.size() != result.indices.size()) {
+      throw std::invalid_argument(
+          "Tensor and symmetry ranks differ in Wick binary data");
+    }
+  }
+  result.symmetry = TensorSymmetry::FromElements(std::move(permutations));
+  const auto kind = reader.Scalar<std::uint8_t>();
+  if (kind >= serialization_detail::kTensorWireKinds.size()) {
+    throw std::invalid_argument("Invalid tensor kind in Wick binary data");
+  }
+  result.kind = serialization_detail::kTensorWireKinds[kind];
+  return result;
+}
+
+inline void Term::Save(std::ostream& output) const {
+  serialization_detail::BinaryWriter writer(output);
+  writer.Objects(tensors);
+  writer.Objects(std::set<Index>(summed_indices.begin(), summed_indices.end()));
+  writer.Scalar(coefficient);
+}
+
+inline Term Term::Load(std::istream& input) {
+  serialization_detail::BinaryReader reader(input);
+  Term result;
+  result.tensors = reader.Objects<Tensor>();
+  result.summed_indices = reader.Objects<Index>();
+  std::ranges::sort(result.summed_indices);
+  const auto unique_end = std::ranges::unique(result.summed_indices).begin();
+  result.summed_indices.erase(unique_end, result.summed_indices.end());
+  result.coefficient = reader.Scalar<double>();
+  return result;
+}
+
+inline void Expression::Save(std::ostream& output) const {
+  serialization_detail::BinaryWriter(output).Objects(terms_);
+}
+
+inline Expression Expression::Load(std::istream& input) {
+  return Expression(serialization_detail::BinaryReader(input).Objects<Term>());
 }
 
 } // namespace wickqc::symbolic

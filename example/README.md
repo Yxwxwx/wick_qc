@@ -18,7 +18,7 @@ CMake. The backend choice is inherited from the project build.
 The `ccsd` command uses **spin-free spatial CCSD with chemist integrals**:
 
 ```cpp
-#include "method/spatial_cc.h"
+#include "method/spatial.hpp"
 
 const auto generator = wickqc::method::SpatialCCGenerator(
     2, wickqc::method::IntegralConvention::kChemist);
@@ -61,7 +61,7 @@ CMake or the C++ generator.
 For an embedding C++ host, the essential calls are:
 
 ```cpp
-#include "build_time/kernels.h"
+#include "build_time/kernels.hpp"
 #include <string>
 
 // dimensions and tensors are filled by the host after compilation.
@@ -72,7 +72,7 @@ for (const auto& entry : wickqc::example::ICNEVPT2Kernels()) {
 }
 ```
 
-`kernels.h` is the example's declaration header. `Inputs()` and `Outputs()` on
+`kernels.hpp` is the example's declaration header. `Inputs()` and `Outputs()` on
 each kernel provide tensor names and domains; `binding.Shape(dimensions)` gives
 the required runtime shape.
 
@@ -98,7 +98,7 @@ The build-time example covers equation evaluation, not a new NEVPT2 solver.
 
 ## Supply a real molecular RHF calculation
 
-`RHFData` in `src/method/rhf_data.h` binds occupied/virtual views of runtime MO
+`RHFData` in `src/method/rhf.hpp` binds occupied/virtual views of runtime MO
 arrays. `evaluate_rhf.cpp` uses that API, derives MP2 amplitudes, and performs one
 CCSD Jacobi update after inverting the covariant spin metric. It accepts:
 

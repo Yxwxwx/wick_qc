@@ -1,4 +1,4 @@
-#include "backend/lapack.h"
+#include "backend/lapack.hpp"
 #include "runtime_dimensions.hpp"
 
 #include <gtest/gtest.h>
@@ -47,8 +47,9 @@ TEST(Lapack, RankDeficientMinimumNormSolution) {
   EXPECT_EQ(result.rank, 1U);
   EXPECT_NEAR(result.solution[0], 1.5, 1e-12);
   EXPECT_NEAR(result.solution[1], 1.5, 1e-12);
-  for (std::size_t i = 2; i < n; ++i)
+  for (std::size_t i = 2; i < n; ++i) {
     EXPECT_NEAR(result.solution[i], 0, 1e-12);
+  }
 }
 
 TEST(Lapack, UnderdeterminedMinimumNormSolution) {
@@ -70,8 +71,9 @@ TEST(Lapack, UnderdeterminedMinimumNormSolution) {
 TEST(Lapack, CutoffControlsNumericalRank) {
   const auto n = wickqc::test::Dimension("WICKQC_TEST_ACTIVE");
   std::vector<double> matrix(n * n), rhs(n, 1.);
-  for (std::size_t i = 0; i < n; ++i)
+  for (std::size_t i = 0; i < n; ++i) {
     matrix[i * n + i] = 1;
+  }
   matrix.back() = 1e-8;
   const auto full = LeastSquares(matrix, n, n, rhs);
   const auto truncated = LeastSquares(matrix, n, n, rhs, 1e-6);
@@ -86,8 +88,9 @@ TEST(Lapack, ZeroMatrixAndInvalidInputs) {
   std::vector<double> matrix(n * n), rhs(n, 1.);
   const auto result = LeastSquares(matrix, n, n, rhs);
   EXPECT_EQ(result.rank, 0U);
-  for (double value : result.solution)
+  for (double value : result.solution) {
     EXPECT_NEAR(value, 0, 1e-12);
+  }
   EXPECT_THROW((void)LeastSquares(matrix, 0, n, rhs), std::invalid_argument);
   EXPECT_THROW(
       (void)LeastSquares(matrix, n + 1, n, rhs), std::invalid_argument);

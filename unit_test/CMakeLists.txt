@@ -27,3 +27,9 @@ if(WICKQC_BUILD_EXAMPLES)
   target_link_libraries(wickqc_codegen_tests PRIVATE wickqc_runtime wickqc_example_kernels GTest::gtest_main)
   wickqc_dimension_tests(wickqc_codegen_tests codegen)
 endif()
+
+# Two ordinary consumers include only the umbrella; no project object library
+# is linked. This catches missing inline definitions and ODR/link failures.
+add_executable(wickqc_header_only_tests test_header_only.cpp header_only_peer.cpp)
+target_link_libraries(wickqc_header_only_tests PRIVATE wickqc::wickqc GTest::gtest_main)
+wickqc_dimension_tests(wickqc_header_only_tests header_only)

@@ -69,10 +69,10 @@ TEST(NDArray, BroadcastAndIntegerEinsumAgreeWithLoops) {
 TEST(NDArray, InvalidIndicesAndEmptyContraction) {
   const auto n = Dimension("WICKQC_TEST_OCCUPIED");
   const Array array({n, n});
-  EXPECT_THROW(Array::Einsum("ij->k", {array}), std::invalid_argument);
+  EXPECT_THROW((void)Array::Einsum("ij->k", {array}), std::invalid_argument);
   EXPECT_THROW(
-      Array::Einsum("ii->", {Array({n, n + 1})}), std::invalid_argument);
-  EXPECT_THROW(array.TransposeView({0, 0}), std::invalid_argument);
+      (void)Array::Einsum("ii->", {Array({n, n + 1})}), std::invalid_argument);
+  EXPECT_THROW((void)array.TransposeView({0, 0}), std::invalid_argument);
   const auto empty = Array::Einsum("ik,jk->ij", {Array({n, 0}), Array({n, 0})});
   EXPECT_EQ(empty.shape(), (Array::Shape{n, n}));
   EXPECT_DOUBLE_EQ(empty.Norm(), 0);

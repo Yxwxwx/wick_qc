@@ -1,10 +1,10 @@
 #include "backend/ndarray.hpp"
-#include "build_time/kernels.h"
-#include "method/ic_nevpt2.h"
-#include "method/spatial_cc.h"
-#include "runtime/ndarray_executor.h"
-#include "runtime/numeric_kernel.h"
-#include "runtime/tensor_binding.h"
+#include "build_time/kernels.hpp"
+#include "method/nevpt2.hpp"
+#include "method/spatial.hpp"
+#include "method/specification.hpp"
+#include "runtime/executor.hpp"
+#include "runtime/numeric.hpp"
 #include "runtime_dimensions.hpp"
 
 #include <gtest/gtest.h>
@@ -165,7 +165,8 @@ TEST(Codegen, SpatialCCSDMatchesUnoptimizedEquations) {
   Compare<double>(kernel, reference, dimensions, true);
   Compare<std::complex<double>>(kernel, reference, dimensions, true);
   EXPECT_THROW(
-      kernel.Evaluate(TensorMap<double>{}, dimensions), std::invalid_argument);
+      (void)kernel.Evaluate(TensorMap<double>{}, dimensions),
+      std::invalid_argument);
 }
 
 TEST(Codegen, AllICNEVPT2BlocksMatchUnoptimizedEquations) {

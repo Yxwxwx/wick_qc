@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/numeric_kernel.h"
+#include "runtime/numeric.hpp"
 
 #include <span>
 #include <string_view>

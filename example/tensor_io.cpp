@@ -1,4 +1,7 @@
-#include "tensor_io.h"
+#include "tensor_io.hpp"
+#include <ios>
+#include "backend/ndarray.hpp"
+#include "runtime/numeric.hpp"
 
 #include <bit>
 #include <cmath>

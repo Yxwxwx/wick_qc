@@ -1,24 +1,56 @@
-#include "runtime/spatial_evaluator.h"
-
-#include "equation/graph.h"
-#include "method/integral_convention.h"
-#include "method/spatial_cc.h"
-#include "method/spatial_method.h"
-#include "method/spatial_mp.h"
-#include "runtime/ndarray_executor.h"
-#include "runtime/numeric_kernel.h"
-#include "runtime/precompiled.h"
-#include "runtime/tensor_binding.h"
+#pragma once
 
 #include <complex>
+#include <cstdint>
 #include <stdexcept>
 #include <variant>
 #include <vector>
+#include "equation/graph.hpp"
+#include "method/spatial.hpp"
+#include "method/specification.hpp"
+#include "runtime/executor.hpp"
+#include "runtime/numeric.hpp"
 
 namespace wickqc::runtime {
-SpatialEvaluator::SpatialEvaluator(
+
+enum class GenerationPolicy : std::uint8_t {
+  kPreferPrecompiled,
+  kPrecompiledOnly,
+  kRuntimeOnly
+};
+
+// Construct once, then evaluate repeatedly with new amplitudes and/or shapes.
+// A fallback construction performs Wick expansion and lowering once, locally;
+// Evaluate never performs symbolic work. No global cache or mutable state.
+// A null lookup enables standalone use. Pass the optional generated registry
+// explicitly to reuse build-time kernels; returned kernels must outlive this
+// object.
+class SpatialEvaluator {
+ public:
+  using KernelLookup = const NumericKernel* (*)(method::SpatialMethod);
+
+  explicit SpatialEvaluator(
+      method::SpatialMethod method,
+      GenerationPolicy policy = GenerationPolicy::kPreferPrecompiled,
+      KernelLookup lookup = nullptr);
+  [[nodiscard]] bool IsPrecompiled() const noexcept;
+  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const;
+  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const;
+  [[nodiscard]] TensorMap<double> Evaluate(
+      const TensorMap<double>& inputs,
+      const Dimensions& dimensions) const;
+  [[nodiscard]] TensorMap<std::complex<double>> Evaluate(
+      const TensorMap<std::complex<double>>& inputs,
+      const Dimensions& dimensions) const;
+
+ private:
+  std::variant<const NumericKernel*, NDArrayExecutor> implementation_;
+};
+
+inline SpatialEvaluator::SpatialEvaluator(
     method::SpatialMethod method,
-    GenerationPolicy policy) {
+    GenerationPolicy policy,
+    KernelLookup lookup) {
   if (policy != GenerationPolicy::kPreferPrecompiled &&
       policy != GenerationPolicy::kPrecompiledOnly &&
       policy != GenerationPolicy::kRuntimeOnly) {
@@ -35,13 +67,13 @@ SpatialEvaluator::SpatialEvaluator(
         "An excitation bound is supported only for MP and must be nonnegative");
   }
   if (policy != GenerationPolicy::kRuntimeOnly) {
-    if (const auto* kernel = FindPrecompiled(method)) {
+    if (const auto* kernel = lookup == nullptr ? nullptr : lookup(method)) {
       implementation_ = kernel;
       return;
     }
     if (policy == GenerationPolicy::kPrecompiledOnly) {
       throw std::invalid_argument(
-          "Requested method was not precompiled; select it with WICKQC_PRECOMPILE_MP/CC and WICKQC_PRECOMPILE_CONVENTIONS");
+          "Requested method is absent from the supplied kernel lookup; pass the generated registry and select the method with WICKQC_PRECOMPILE_MP/CC and WICKQC_PRECOMPILE_CONVENTIONS");
     }
   }
   equation::ContractionGraph graph;
@@ -62,22 +94,22 @@ SpatialEvaluator::SpatialEvaluator(
   implementation_ = NDArrayExecutor::Compile(graph.Simplify());
 }
 
-bool SpatialEvaluator::IsPrecompiled() const noexcept {
+inline bool SpatialEvaluator::IsPrecompiled() const noexcept {
   return std::holds_alternative<const NumericKernel*>(implementation_);
 }
-const std::vector<TensorBinding>& SpatialEvaluator::Inputs() const {
+inline const std::vector<TensorBinding>& SpatialEvaluator::Inputs() const {
   if (IsPrecompiled()) {
     return std::get<const NumericKernel*>(implementation_)->Inputs();
   }
   return std::get<NDArrayExecutor>(implementation_).Inputs();
 }
-const std::vector<TensorBinding>& SpatialEvaluator::Outputs() const {
+inline const std::vector<TensorBinding>& SpatialEvaluator::Outputs() const {
   if (IsPrecompiled()) {
     return std::get<const NumericKernel*>(implementation_)->Outputs();
   }
   return std::get<NDArrayExecutor>(implementation_).Outputs();
 }
-TensorMap<double> SpatialEvaluator::Evaluate(
+inline TensorMap<double> SpatialEvaluator::Evaluate(
     const TensorMap<double>& inputs,
     const Dimensions& dimensions) const {
   if (IsPrecompiled()) {
@@ -87,7 +119,7 @@ TensorMap<double> SpatialEvaluator::Evaluate(
   return std::get<NDArrayExecutor>(implementation_)
       .Evaluate(inputs, dimensions);
 }
-TensorMap<std::complex<double>> SpatialEvaluator::Evaluate(
+inline TensorMap<std::complex<double>> SpatialEvaluator::Evaluate(
     const TensorMap<std::complex<double>>& inputs,
     const Dimensions& dimensions) const {
   if (IsPrecompiled()) {

@@ -7,19 +7,41 @@ Tensor Equation IR, Einsum IR, contraction-graph optimization, NumPy rendering,
 and build-time C++ code generation and numerical execution through NDArray
 with TBLIS or BLAS backends.
 
-The independent implementation is built as `wickqc_symbolic` from
-`src/symbolic`, `src/equation`, `src/einsum`, and `src/method`. The supplied
-`docs/wick.hpp` is a local, Git-ignored block2 reference. It is retained for
-algorithm and convention comparisons and is not required by the build.
+The library is header-only. `#include "wick.hpp"` is the public umbrella for
+Wick algebra, QC method generators, contraction graphs, einsum, NDArray,
+numerical execution, and C++ code generation. All core definitions live in
+module `.hpp` files; narrower includes remain available for numeric-only hosts.
+The supplied `docs/wick.hpp` is an ignored block2 reference, independent of
+`src/wick.hpp`, and is not a build dependency.
 
-Declaration headers use `.h`, with definitions in `.cpp`. Headers containing
-implementations retain `.hpp`, including the NDArray backends and the block2
-reference.
+```cpp
+#include "wick.hpp"
+```
+
+With CMake, link the interface target `wickqc::wickqc` to inherit C++20,
+OpenMP, and both selected einsum and LAPACK backends. For a numeric-only
+consumer, `wickqc_numeric` omits LAPACK; `wickqc_lapack` is also available
+separately. A direct consumer can instead add `src/` to the include path and compile with `-std=c++20 -fopenmp`; the default einsum implementation needs no external tensor library.
+External BLAS/TBLIS/LAPACK backends still require their own headers and libraries.
+No WickQC object library is needed. Use the same backend definitions in every
+translation unit of a program.
+
+```cmake
+add_subdirectory(wick_qc EXCLUDE_FROM_ALL)
+target_link_libraries(host PRIVATE wickqc::wickqc)
+```
+
+The core is organized into 19 headers; the only `.cpp` under `src/` is the
+code-generation command-line program. Related pieces share a module header:
+Wick algebra and serialization, tensor equations and graph optimization,
+einsum lowering and NumPy rendering, numeric contracts, MP/CC generators,
+and the two NEVPT2 generators.
 
 ## Repository layout
 
 | Directory | Responsibility |
 | --- | --- |
+| `src/wick.hpp` | Whole-library umbrella, analogous to `Eigen/Dense` |
 | `src/symbolic/` | Wick algebra, index domains, tensor symmetries and serialization |
 | `src/equation/`, `src/einsum/` | Tensor-equation graphs, optimization, einsum IR and NumPy text |
 | `src/backend/` | Runtime NDArray, contraction planning and BLAS/TBLIS/LAPACK bindings |
@@ -87,8 +109,9 @@ or `MKLROOT` and defaults to sequential GEMM; `MKL_THREADING` can select a
 threading layer compatible with the application. OpenMP is linked explicitly
 for NDArray reductions. Control BLAS/OpenMP thread counts in the calling job.
 
-The `wickqc_lapack` target provides `backend/lapack.h`; its public
-interface contains no vendor types or headers. OpenBLAS must include LAPACKE.
+The `wickqc_lapack` target provides `backend/lapack.hpp`; its public
+functions use project-owned types; the header includes the selected vendor
+adapter and the CMake target propagates its dependencies. OpenBLAS must include LAPACKE.
 TBLIS contractions can therefore use either MKL or OpenBLAS for LAPACK:
 
 ```bash
@@ -122,8 +145,8 @@ or backend settings.
 
 The NDArray and GEMM implementations supplied in `tmp_backend` now live in
 `src/backend/ndarray.hpp` and `src/backend/blas.hpp`, in namespace `wickqc`.
-The original directory is not a build dependency. They remain template headers;
-the new adapter uses `.h` declarations and a `.cpp` implementation.
+The original directory is not a build dependency. They and the execution
+adapter are header-only `.hpp` modules.
 
 The execution path is:
 
@@ -145,8 +168,8 @@ internal execution. Diagonals, unary reductions, copies, and permutations
 remain NDArray operations, so no TBLIS level-1 entry points are needed.
 
 ```cpp
-#include "method/spatial_cc.h"
-#include "runtime/ndarray_executor.h"
+#include "method/spatial.hpp"
+#include "runtime/executor.hpp"
 
 using namespace wickqc;
 const runtime::Dimensions dimensions{
@@ -249,7 +272,7 @@ one. Generated files are build artifacts, marked as generated and covered by
 tracks the generator executable and its source dependencies; changing the
 method selection updates the registry and the selected generated sources.
 
-`runtime::SpatialEvaluator` selects a precompiled kernel when present. An
+`runtime::SpatialEvaluator` accepts an optional kernel lookup function. An
 unselected method is expanded and lowered once in its constructor; keep the
 object for all subsequent evaluations. `GenerationPolicy::kPrecompiledOnly`
 rejects missing kernels, and `kRuntimeOnly` explicitly exercises the fallback.
@@ -258,8 +281,8 @@ its evaluations perform no symbolic work. Avoiding that first cost requires
 selecting the method during the build.
 
 ```cpp
-#include "method/rhf_data.h"
-#include "runtime/spatial_evaluator.h"
+#include "method/rhf.hpp"
+#include "runtime/spatial.hpp"
 
 // All counts and arrays come from the host program or files at runtime.
 wickqc::method::RHFData data{nocc, mo_energies, fock_mo, eri_chemist};
@@ -272,12 +295,20 @@ auto outputs = cc.Evaluate(inputs, data.Dimensions());
 // Repeat with updated amplitudes using the same cc object.
 ```
 
-Link this host to `wickqc_methods` and `wickqc_rhf`. For a host that uses only
-precompiled methods, link `wickqc_precompiled` and `wickqc_rhf`, include
-`runtime/precompiled.h`, and obtain the `NumericKernel` through
-`FindPrecompiled(SpatialMethod)`. That path has no link dependency on the Wick
-engine. `PrecompiledMethods()` lists the configured selection. The
-`wickqc_numeric` library provides just the shared runtime tensor contracts.
+Link this host to `wickqc::wickqc`. Without a lookup function the evaluator
+uses header-only runtime generation. To select build-generated kernels, link
+`wickqc_precompiled`, include `precompiled.generated.hpp`, and pass
+`runtime::FindPrecompiled` as the constructor's third argument, after the
+method specification and generation policy. There is no global registration
+or hidden dependency on generated object files.
+
+For a host that uses only precompiled methods, include
+`precompiled.generated.hpp` and obtain the `NumericKernel` directly through
+`runtime::FindPrecompiled(SpatialMethod)`. `runtime::PrecompiledMethods()` lists
+the configured selection. This optional library contains only generated
+numerical `.cpp` files; the header-only core remains independent of it. The
+`wickqc_numeric` interface target supplies the runtime tensor contracts and
+selected einsum backend without linking symbolic code.
 Generated kernels support `double` and `complex<double>`; the RHF data adapter
 uses real integrals/amplitudes. The spin-free
 method equations retain their existing real-orbital symmetry conventions.

@@ -1,14 +1,8 @@
-#include "runtime/ndarray_executor.h"
-
-#include "backend/ndarray.hpp"
-#include "einsum/einsum.h"
-#include "equation/equation.h"
-#include "runtime/tensor_binding.h"
-#include "symbolic/wick.h"
+#pragma once
 
 #include <algorithm>
-#include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <limits>
 #include <map>
@@ -18,10 +12,66 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "backend/ndarray.hpp"
+#include "einsum/einsum.hpp"
+#include "equation/graph.hpp"
+#include "runtime/numeric.hpp"
+#include "symbolic/wick.hpp"
+
+namespace wickqc::codegen {
+class CPPEmitter;
+}
 
 namespace wickqc::runtime {
-namespace {
-TensorBinding Binding(const std::string& name, const symbolic::Tensor& tensor) {
+
+// Compile once after Wick expansion, optionally from graph.Simplify().
+// Evaluation performs no symbolic algebra or string einsum parsing. Each call
+// owns its outputs and intermediates; caller inputs (including views) stay
+// intact. double and complex<double> are supported by every GEMM backend.
+class NDArrayExecutor {
+ public:
+  [[nodiscard]] static NDArrayExecutor Compile(
+      const equation::ContractionGraph& graph);
+  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept;
+  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept;
+
+  template <typename T>
+  [[nodiscard]] TensorMap<T> Evaluate(
+      const TensorMap<T>& inputs,
+      const Dimensions& dimensions) const;
+
+ private:
+  friend class codegen::CPPEmitter;
+  enum class Source : std::uint8_t { kInput, kValue, kOnes, kDelta };
+  struct Input {
+    TensorBinding binding;
+    Source source = Source::kInput;
+  };
+  struct Contraction {
+    double coefficient = 1.0;
+    std::vector<Input> operands;
+    std::vector<std::vector<int>> indices;
+    std::vector<int> output_indices;
+  };
+  struct Transform {
+    double coefficient = 1.0;
+    std::vector<int> axes;
+  };
+  struct Assignment {
+    TensorBinding output;
+    std::vector<Contraction> terms;
+    std::vector<Transform> transforms;
+    std::vector<std::string> release;
+  };
+  std::vector<TensorBinding> inputs_;
+  std::vector<TensorBinding> outputs_;
+  std::vector<Assignment> assignments_;
+};
+
+namespace ndarray_executor_detail {
+inline TensorBinding Binding(
+    const std::string& name,
+    const symbolic::Tensor& tensor) {
   TensorBinding result{name, {}};
   for (const auto& index : tensor.indices) {
     result.domains.push_back(index.domain);
@@ -29,7 +79,7 @@ TensorBinding Binding(const std::string& name, const symbolic::Tensor& tensor) {
   return result;
 }
 
-std::vector<int> Labels(const std::vector<einsum::IndexID>& indices) {
+inline std::vector<int> Labels(const std::vector<einsum::IndexID>& indices) {
   std::vector<int> result;
   for (const auto id : indices) {
     if (id > static_cast<einsum::IndexID>(std::numeric_limits<int>::max())) {
@@ -39,9 +89,9 @@ std::vector<int> Labels(const std::vector<einsum::IndexID>& indices) {
   }
   return result;
 }
-} // namespace
+} // namespace ndarray_executor_detail
 
-NDArrayExecutor NDArrayExecutor::Compile(
+inline NDArrayExecutor NDArrayExecutor::Compile(
     const equation::ContractionGraph& graph) {
   NDArrayExecutor result;
   std::map<std::string, TensorBinding> definitions;
@@ -51,7 +101,8 @@ NDArrayExecutor NDArrayExecutor::Compile(
           "Graph output must be a coefficient tensor: '" + node.output.name +
           "'");
     }
-    const auto binding = Binding(node.output.name, node.output);
+    const auto binding =
+        ndarray_executor_detail::Binding(node.output.name, node.output);
     if (!definitions.emplace(binding.name, binding).second) {
       throw std::invalid_argument(
           "Duplicate graph assignment '" + binding.name + "'");
@@ -70,7 +121,11 @@ NDArrayExecutor NDArrayExecutor::Compile(
     const auto program = einsum::Program::Lower(
         equation,
         {graph.Options().intermediate_prefix, true, true, true, true});
-    Assignment assignment{Binding(node.output.name, node.output), {}, {}, {}};
+    Assignment assignment{
+        ndarray_executor_detail::Binding(node.output.name, node.output),
+        {},
+        {},
+        {}};
     std::set<symbolic::Index> output_axes;
     for (const auto& index : node.output.indices) {
       if (!output_axes.insert(index).second || !index.domain.IsConcrete()) {
@@ -82,7 +137,10 @@ NDArrayExecutor NDArrayExecutor::Compile(
       const auto& term = program.Terms()[t];
       const auto& tensors = equation.Terms()[t].inputs;
       Contraction contraction{
-          term.coefficient, {}, {}, Labels(term.output_indices)};
+          term.coefficient,
+          {},
+          {},
+          ndarray_executor_detail::Labels(term.output_indices)};
       for (std::size_t i = 0; i < term.operands.size(); ++i) {
         const auto& operand = term.operands[i];
         Input input;
@@ -97,7 +155,8 @@ NDArrayExecutor NDArrayExecutor::Compile(
           }
         } else {
           const auto& tensor = tensors[i];
-          input.binding = Binding(operand.variable, tensor);
+          input.binding =
+              ndarray_executor_detail::Binding(operand.variable, tensor);
           if (tensor.kind == symbolic::TensorKind::kDelta) {
             if (tensor.indices.size() != 2 ||
                 tensor.indices[0].domain != tensor.indices[1].domain) {
@@ -126,7 +185,8 @@ NDArrayExecutor NDArrayExecutor::Compile(
           }
         }
         contraction.operands.push_back(std::move(input));
-        contraction.indices.push_back(Labels(operand.indices));
+        contraction.indices.push_back(
+            ndarray_executor_detail::Labels(operand.indices));
       }
       assignment.terms.push_back(std::move(contraction));
     }
@@ -221,15 +281,17 @@ NDArrayExecutor NDArrayExecutor::Compile(
   return result;
 }
 
-const std::vector<TensorBinding>& NDArrayExecutor::Inputs() const noexcept {
+inline const std::vector<TensorBinding>& NDArrayExecutor::Inputs()
+    const noexcept {
   return inputs_;
 }
-const std::vector<TensorBinding>& NDArrayExecutor::Outputs() const noexcept {
+inline const std::vector<TensorBinding>& NDArrayExecutor::Outputs()
+    const noexcept {
   return outputs_;
 }
 
 template <typename T>
-TensorMap<T> NDArrayExecutor::Evaluate(
+inline TensorMap<T> NDArrayExecutor::Evaluate(
     const TensorMap<T>& inputs,
     const Dimensions& dimensions) const {
   using Array = NDArray<T>;
@@ -298,12 +360,5 @@ TensorMap<T> NDArrayExecutor::Evaluate(
   }
   return values;
 }
-
-template TensorMap<double> NDArrayExecutor::Evaluate(
-    const TensorMap<double>&,
-    const Dimensions&) const;
-template TensorMap<std::complex<double>> NDArrayExecutor::Evaluate(
-    const TensorMap<std::complex<double>>&,
-    const Dimensions&) const;
 
 } // namespace wickqc::runtime

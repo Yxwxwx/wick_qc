@@ -1,11 +1,7 @@
-#include "method/ccsd.h"
-#include "method/ghf.h"
-#include "method/ic_nevpt2.h"
-#include "method/integral_convention.h"
-#include "method/sc_nevpt2.h"
-#include "method/spatial_cc.h"
-#include "method/spatial_mp.h"
-#include "method/uga_ccsd.h"
+#include "method/nevpt2.hpp"
+#include "method/spatial.hpp"
+#include "method/specification.hpp"
+#include "method/spin_orbital.hpp"
 
 #include <charconv>
 #include <exception>

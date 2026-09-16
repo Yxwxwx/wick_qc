@@ -1,6 +1,4 @@
-#include "equation/graph.hpp"
-#include "symbolic/index_domain.hpp"
-#include "symbolic/wick.hpp"
+#include "wick.hpp"
 
 #include <gtest/gtest.h>
 

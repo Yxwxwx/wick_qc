@@ -1,12 +1,5 @@
-#include "backend/ndarray.hpp"
 #include "runtime_dimensions.hpp"
-
-#if defined(WICKQC_USE_TBLIS)
-#include <vector>
-#include "backend/tblis.hpp"
-#else
-#include "backend/blas.hpp"
-#endif
+#include "wick.hpp"
 
 #include <gtest/gtest.h>
 

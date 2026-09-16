@@ -1,11 +1,6 @@
-#include "backend/ndarray.hpp"
 #include "build_time/kernels.hpp"
-#include "method/nevpt2.hpp"
-#include "method/spatial.hpp"
-#include "method/specification.hpp"
-#include "runtime/executor.hpp"
-#include "runtime/numeric.hpp"
 #include "runtime_dimensions.hpp"
+#include "wick.hpp"
 
 #include <gtest/gtest.h>
 

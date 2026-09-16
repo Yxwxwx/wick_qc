@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 include(cmake/EinsumBackend.cmake)
 include(cmake/LapackBackend.cmake)
+include(cmake/TransposeBackend.cmake)
 
 # All core modules are header-only. These interface targets express optional
 # backend dependencies without compiling project implementation libraries.

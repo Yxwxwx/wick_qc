@@ -1,5 +1,5 @@
-#include "backend/lapack.hpp"
 #include "runtime_dimensions.hpp"
+#include "wick.hpp"
 
 #include <gtest/gtest.h>
 

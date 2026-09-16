@@ -1,6 +1,7 @@
 #pragma once
 
 #include "contraction_plan.hpp"
+#include "transpose.hpp"
 
 #if defined(WICKQC_USE_TBLIS)
 #include "tblis.hpp"
@@ -637,17 +638,19 @@ class NDArray {
     return sqrt(sum);
   }
 
-  [[nodiscard]] NDArray Clone() const {
+  [[nodiscard]] NDArray Clone(
+      const backend::TransposeOptions& options = {}) const {
     NDArray result(shape_);
-    Copy(*this, result);
+    Copy(*this, result, {}, T{1}, T{}, options);
     return result;
   }
 
-  [[nodiscard]] NDArray ToCOrder() const {
+  [[nodiscard]] NDArray ToCOrder(
+      const backend::TransposeOptions& options = {}) const {
     if (IsContiguous()) {
       return *this;
     }
-    return Clone();
+    return Clone(options);
   }
 
   [[nodiscard]] NDArray operator*(const T& scalar) const {
@@ -705,12 +708,23 @@ class NDArray {
     return View(new_shape, new_strides, data_, storage_);
   }
 
+  // Materialized C-order permutation. TransposeView itself never copies data.
+  [[nodiscard]] NDArray TransposeCopy(
+      const std::vector<int>& permutation,
+      const backend::TransposeOptions& options = {}) const {
+    return TransposeView(permutation).Clone(options);
+  }
+
   static void Copy(
       const NDArray& source,
       NDArray& destination,
       const std::vector<int>& permutation = {},
       T alpha = T{1},
-      T beta = T{}) {
+      T beta = T{},
+      const backend::TransposeOptions& options = {}) {
+    if (options.num_threads < 1) {
+      throw std::invalid_argument("transpose thread count must be positive");
+    }
     std::vector<int> perm = permutation;
     if (perm.empty()) {
       perm.resize(source.shape_.size());
@@ -724,6 +738,20 @@ class NDArray {
     }
     if (destination.shape_ != expected_shape) {
       throw std::invalid_argument("transpose/copy output shape mismatch");
+    }
+
+    if (options.hptt_min_bytes && !source.Overlaps(destination) &&
+        backend::TryHpttTranspose(
+            source.data_,
+            source.shape_,
+            source.strides_,
+            perm,
+            destination.data_,
+            destination.strides_,
+            alpha,
+            beta,
+            options)) {
+      return;
     }
 
     for (std::size_t linear = 0; linear < destination.Size(); ++linear) {

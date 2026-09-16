@@ -1,8 +1,5 @@
-#include "backend/ndarray.hpp"
-#include "method/spatial.hpp"
-#include "runtime/executor.hpp"
-#include "runtime/numeric.hpp"
 #include "runtime_dimensions.hpp"
+#include "wick.hpp"
 
 #include <gtest/gtest.h>
 

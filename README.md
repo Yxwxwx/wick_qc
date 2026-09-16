@@ -169,6 +169,79 @@ as above; that header uses the TBLIS compilation database for its dependency
 paths. Reconfigure the corresponding build directory after changing targets
 or backend settings.
 
+### Optional HPTT transpose backend
+
+Transpose selection is independent of einsum and LAPACK. The default remains
+the existing native copy loop; HPTT is an optional BSD-3-Clause dependency.
+Enable an installed HPTT (including its headers and library) with:
+
+```sh
+cmake -S . -B build/hptt -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DWICKQC_ENABLE_HPTT=ON \
+  -DHPTT_ROOT="$HOME/Applications/hptt/install"
+```
+
+An HPTT static library linked into PIE executables or shared libraries must
+be built with `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`. The current local
+`~/Applications/hptt/install/lib/libhptt.a` is non-PIC; validation uses the
+project's `/software/Applications/gcc/13.3.0/bin/c++` compiler, whose default
+executables are non-PIE. The system compiler defaults to PIE and rejects that
+archive. WickQC does not change the application's PIE or PIC settings.
+
+`TransposeView(permutation)` only changes shape/strides and shares storage.
+`ToCOrder()` also returns shared storage when it is already C contiguous.
+Only `Copy`, `Clone`, `TransposeCopy`, and a necessary `ToCOrder` materialization
+can reach the transpose backend. The permutation convention is
+`output_shape[i] = input_shape[permutation[i]]`; complex values are not conjugated.
+
+```cpp
+auto view = a.TransposeView({2, 0, 3, 1}); // no data movement
+wickqc::backend::TransposeOptions options;
+options.hptt_min_bytes = measured_minimum_payload_bytes;
+options.num_threads = 2;
+auto dense = view.ToCOrder(options);
+auto equivalent = a.TransposeCopy({2, 0, 3, 1}, options);
+// Copy also accepts these options after its alpha and beta arguments.
+```
+
+The independent `ShouldUseHptt` heuristic in `backend/transpose.hpp` is
+intentionally conservative:
+
+- No size crossover is assumed. The default `hptt_min_bytes` is `nullopt`, so
+  enabling the dependency alone keeps automatic copies native until calibrated.
+  Set the per-call option or `WICKQC_HPTT_MIN_BYTES` in CMake to a measured
+  minimum **tensor payload** size in bytes. A per-call `nullopt` forces native.
+- Input must occupy a single dense interval, possibly described by a dense
+  permutation view; output must be C contiguous. Padded, strided-slice, reversed,
+  broadcast and overlapping layouts fall back to native. Singleton axes are
+  ignored when recognizing physical layout, so a dense slice remains eligible.
+- Only float, double and their complex types are supported. Empty tensors,
+  scalars and tensors whose element count exceeds HPTT's internal `int` range
+  fall back. Validation occurs before HPTT planning.
+- After removing singleton axes, rank must exceed two; the permutation must
+  have more than two runs of consecutive physical input axes and move the
+  innermost axis. Identity, flattened matrix transposes and permutations
+  preserving contiguous inner blocks currently stay native.
+- Copies below the configured byte crossover and calls from an existing
+  OpenMP parallel region stay native. HPTT defaults to one thread, uses
+  `ESTIMATE` planning and cached stores, and has no global plan cache or
+  runtime autotuning. The adapter preserves native alpha/beta evaluation,
+  including reading the destination when beta is zero.
+
+Future benchmarks must measure **planning plus execution** against native,
+with runtime sizes and the actual caller's thread configuration. They should
+determine byte crossovers by scalar type, rank, permutation family and aspect
+ratio; the size at which additional threads pay off; and whether the current
+low-rank/contiguous-inner-block exclusions should be relaxed. Plan reuse and
+cached versus streaming stores need separate measurements before changing
+those policies. No performance speedup is assumed by this initial integration.
+
+The focused correctness target is `wickqc_transpose_tests`; run it with
+`ctest --test-dir build/hptt --output-on-failure -R '^transpose_'`.
+Its zero-byte test policy deliberately exercises HPTT on small fixtures and
+is not a recommended production threshold. An HPTT-disabled build runs the
+same tests against native and needs no HPTT headers or library.
+
 ## Execute Wick equations with NDArray
 
 The NDArray and GEMM implementations supplied in `tmp_backend` now live in

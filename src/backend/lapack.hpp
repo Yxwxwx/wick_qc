@@ -41,19 +41,12 @@ struct LeastSquaresResult {
 // values <= relative_cutoff * largest are discarded for cutoffs in (0, 1).
 // As in DGELSD, zero or >= 1 selects LAPACK's machine-precision cutoff.
 // The default is machine epsilon * max(rows, columns), as in lstsq(rcond=None).
-[[nodiscard]] LeastSquaresResult LeastSquares(
+[[nodiscard]] inline LeastSquaresResult LeastSquares(
     std::span<const double> matrix,
     std::size_t rows,
     std::size_t columns,
     std::span<const double> rhs,
-    std::optional<double> relative_cutoff = std::nullopt);
-
-inline LeastSquaresResult LeastSquares(
-    std::span<const double> matrix,
-    std::size_t rows,
-    std::size_t columns,
-    std::span<const double> rhs,
-    std::optional<double> relative_cutoff) {
+    std::optional<double> relative_cutoff = std::nullopt) {
 #if defined(WICKQC_LAPACK_EIGEN)
   const auto limit =
       static_cast<std::size_t>(std::numeric_limits<Eigen::Index>::max());

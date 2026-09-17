@@ -3,6 +3,7 @@
 #include <complex>
 #include <cstddef>
 #include <map>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -34,14 +35,22 @@ struct NumericKernel {
   TensorMap<std::complex<double>> (
       *complex)(const TensorMap<std::complex<double>>&, const Dimensions&);
 
-  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept;
-  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept;
+  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept {
+    return inputs;
+  }
+  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept {
+    return outputs;
+  }
   [[nodiscard]] TensorMap<double> Evaluate(
       const TensorMap<double>& inputs,
-      const Dimensions& dimensions) const;
+      const Dimensions& dimensions) const {
+    return real(inputs, dimensions);
+  }
   [[nodiscard]] TensorMap<std::complex<double>> Evaluate(
       const TensorMap<std::complex<double>>& inputs,
-      const Dimensions& dimensions) const;
+      const Dimensions& dimensions) const {
+    return complex(inputs, dimensions);
+  }
 };
 
 inline std::vector<std::size_t> TensorBinding::Shape(
@@ -60,23 +69,24 @@ inline std::vector<std::size_t> TensorBinding::Shape(
   return shape;
 }
 
-inline const std::vector<TensorBinding>& NumericKernel::Inputs()
-    const noexcept {
-  return inputs;
+namespace numeric_detail {
+template <typename T>
+inline void ValidateInputs(
+    std::span<const TensorBinding> bindings,
+    const TensorMap<T>& inputs,
+    const Dimensions& dimensions) {
+  for (const auto& binding : bindings) {
+    const auto found = inputs.find(binding.name);
+    if (found == inputs.end()) {
+      throw std::invalid_argument(
+          "Missing input tensor '" + binding.name + "'");
+    }
+    if (found->second.shape() != binding.Shape(dimensions)) {
+      throw std::invalid_argument(
+          "Shape mismatch for input tensor '" + binding.name + "'");
+    }
+  }
 }
-inline const std::vector<TensorBinding>& NumericKernel::Outputs()
-    const noexcept {
-  return outputs;
-}
-inline TensorMap<double> NumericKernel::Evaluate(
-    const TensorMap<double>& inputs,
-    const Dimensions& dimensions) const {
-  return real(inputs, dimensions);
-}
-inline TensorMap<std::complex<double>> NumericKernel::Evaluate(
-    const TensorMap<std::complex<double>>& inputs,
-    const Dimensions& dimensions) const {
-  return complex(inputs, dimensions);
-}
+} // namespace numeric_detail
 
 } // namespace wickqc::runtime

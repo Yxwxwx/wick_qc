@@ -29,6 +29,11 @@ struct TransposeOptions {
 
 namespace transpose_detail {
 
+template <typename T>
+inline constexpr bool kSupportedScalar = std::is_same_v<T, float> ||
+    std::is_same_v<T, double> || std::is_same_v<T, std::complex<float>> ||
+    std::is_same_v<T, std::complex<double>>;
+
 // Physical row-major input axes, with singleton axes removed. The permutation
 // maps each output axis to an input axis, exactly as NDArray::TransposeView.
 struct DenseLayout {
@@ -111,11 +116,8 @@ template <typename T>
 inline bool ShouldUseHptt(
     const transpose_detail::DenseLayout& layout,
     const TransposeOptions& options) {
-  constexpr bool supported = std::is_same_v<T, float> ||
-      std::is_same_v<T, double> || std::is_same_v<T, std::complex<float>> ||
-      std::is_same_v<T, std::complex<double>>;
-  if (!supported || !options.hptt_min_bytes || options.num_threads < 1 ||
-      layout.shape.size() < 3 ||
+  if (!transpose_detail::kSupportedScalar<T> || !options.hptt_min_bytes ||
+      options.num_threads < 1 || layout.shape.size() < 3 ||
       layout.permutation.size() != layout.shape.size()) {
     return false;
   }
@@ -135,13 +137,10 @@ inline bool ShouldUseHptt(
   if (layout.elements < minimum_elements) {
     return false;
   }
-#if defined(WICKQC_TRANSPOSE_HPTT)
-#ifdef _OPENMP
+#if defined(WICKQC_TRANSPOSE_HPTT) && defined(_OPENMP)
   // Do not add nested parallelism to a caller's existing OpenMP region.
-  if (omp_in_parallel()) {
-    return false;
-  }
-#endif
+  return !omp_in_parallel();
+#elif defined(WICKQC_TRANSPOSE_HPTT)
   return true;
 #else
   return false;
@@ -170,10 +169,7 @@ inline bool TryHpttTranspose(
     return false;
   }
 #if defined(WICKQC_TRANSPOSE_HPTT)
-  if constexpr (
-      std::is_same_v<T, float> || std::is_same_v<T, double> ||
-      std::is_same_v<T, std::complex<float>> ||
-      std::is_same_v<T, std::complex<double>>) {
+  if constexpr (transpose_detail::kSupportedScalar<T>) {
     auto plan = hptt::create_plan(
         layout->permutation.data(),
         static_cast<int>(layout->shape.size()),

@@ -162,6 +162,19 @@ TEST(Codegen, SpatialCCSDMatchesUnoptimizedEquations) {
   EXPECT_THROW(
       (void)kernel.Evaluate(TensorMap<double>{}, dimensions),
       std::invalid_argument);
+  EXPECT_THROW(
+      (void)reference.Evaluate(TensorMap<double>{}, dimensions),
+      std::invalid_argument);
+  auto inputs = Inputs<double>(kernel.Inputs(), dimensions, true);
+  ASSERT_FALSE(inputs.empty());
+  auto& input = inputs.begin()->second;
+  auto wrong_shape = input.shape();
+  wrong_shape.push_back(1);
+  input = wickqc::NDArray<double>(wrong_shape);
+  EXPECT_THROW(
+      (void)kernel.Evaluate(inputs, dimensions), std::invalid_argument);
+  EXPECT_THROW(
+      (void)reference.Evaluate(inputs, dimensions), std::invalid_argument);
 }
 
 TEST(Codegen, AllICNEVPT2BlocksMatchUnoptimizedEquations) {

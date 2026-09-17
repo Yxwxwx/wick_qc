@@ -175,13 +175,8 @@ inline std::string CPPEmitter::Render(
     }
   }
   out << "template <typename T>\nTensorMap<T> Evaluate(const TensorMap<T>& inputs, const Dimensions& dimensions) {\n"
-      << "for (const auto& binding : Kernel_" << function_name
-      << "().Inputs()) {\n"
-         "const auto found = inputs.find(binding.name);\n"
-         "if (found == inputs.end()) {\n"
-         "throw std::invalid_argument(\"Missing input tensor '\" + binding.name + \"'\");\n}\n"
-         "if (found->second.shape() != binding.Shape(dimensions)) {\n"
-         "throw std::invalid_argument(\"Shape mismatch for input tensor '\" + binding.name + \"'\");\n}\n}\n"
+      << "runtime::numeric_detail::ValidateInputs(Kernel_" << function_name
+      << "().Inputs(), inputs, dimensions);\n"
          "TensorMap<T> values;\n";
   for (std::size_t a = 0; a < program.assignments_.size(); a += kChunk) {
     out << "Part" << a / kChunk << "(inputs, dimensions, values);\n";

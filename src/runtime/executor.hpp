@@ -32,8 +32,12 @@ class NDArrayExecutor {
  public:
   [[nodiscard]] static NDArrayExecutor Compile(
       const equation::ContractionGraph& graph);
-  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept;
-  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept;
+  [[nodiscard]] const std::vector<TensorBinding>& Inputs() const noexcept {
+    return inputs_;
+  }
+  [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept {
+    return outputs_;
+  }
 
   template <typename T>
   [[nodiscard]] TensorMap<T> Evaluate(
@@ -281,31 +285,12 @@ inline NDArrayExecutor NDArrayExecutor::Compile(
   return result;
 }
 
-inline const std::vector<TensorBinding>& NDArrayExecutor::Inputs()
-    const noexcept {
-  return inputs_;
-}
-inline const std::vector<TensorBinding>& NDArrayExecutor::Outputs()
-    const noexcept {
-  return outputs_;
-}
-
 template <typename T>
 inline TensorMap<T> NDArrayExecutor::Evaluate(
     const TensorMap<T>& inputs,
     const Dimensions& dimensions) const {
   using Array = NDArray<T>;
-  for (const auto& binding : inputs_) {
-    const auto found = inputs.find(binding.name);
-    if (found == inputs.end()) {
-      throw std::invalid_argument(
-          "Missing input tensor '" + binding.name + "'");
-    }
-    if (found->second.shape() != binding.Shape(dimensions)) {
-      throw std::invalid_argument(
-          "Shape mismatch for input tensor '" + binding.name + "'");
-    }
-  }
+  numeric_detail::ValidateInputs(inputs_, inputs, dimensions);
   TensorMap<T> values;
   for (const auto& assignment : assignments_) {
     const auto shape = assignment.output.Shape(dimensions);

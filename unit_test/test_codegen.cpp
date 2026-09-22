@@ -135,6 +135,13 @@ void Compare(
       Inputs<T>(kernel.Inputs(), dimensions, chemist), dimensions);
   const auto expected = reference.Evaluate(
       Inputs<T>(reference.Inputs(), dimensions, chemist), dimensions);
+  const auto workspace = kernel.WorkspaceElements(dimensions);
+  ASSERT_TRUE(workspace.has_value());
+  std::vector<wickqc::NDArray<T>> outputs;
+  for (const auto& [name, tensor] : actual) {
+    outputs.push_back(tensor);
+  }
+  EXPECT_GE(*workspace * sizeof(T), wickqc::NDArray<T>::StorageBytes(outputs));
   for (const auto& binding : kernel.Outputs()) {
     SCOPED_TRACE(binding.name);
     const auto& a = actual.at(binding.name);
@@ -182,6 +189,22 @@ TEST(Codegen, AllICNEVPT2BlocksMatchUnoptimizedEquations) {
   const auto blocks = wickqc::method::ICNEVPT2Generator().Equations();
   const auto kernels = wickqc::example::ICNEVPT2Kernels();
   ASSERT_EQ(blocks.size(), 13U);
+  ASSERT_EQ(kernels.size(), blocks.size());
+  for (std::size_t i = 0; i < blocks.size(); ++i) {
+    SCOPED_TRACE(blocks[i].first);
+    ASSERT_EQ(kernels[i].name, blocks[i].first);
+    const auto reference =
+        wickqc::runtime::NDArrayExecutor::Compile(blocks[i].second);
+    Compare<double>(*kernels[i].kernel, reference, dimensions, false);
+    Compare<std::complex<double>>(
+        *kernels[i].kernel, reference, dimensions, false);
+  }
+}
+
+TEST(Codegen, AllSCNEVPT2BlocksMatchUnoptimizedEquations) {
+  const auto dimensions = RuntimeDimensions();
+  const auto blocks = wickqc::method::SCNEVPT2Generator().Equations();
+  const auto kernels = wickqc::example::SCNEVPT2Kernels();
   ASSERT_EQ(kernels.size(), blocks.size());
   for (std::size_t i = 0; i < blocks.size(); ++i) {
     SCOPED_TRACE(blocks[i].first);

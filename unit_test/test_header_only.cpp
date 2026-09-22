@@ -67,3 +67,51 @@ TEST(HeaderOnly, OptionalGeneratedLookupIsExplicit) {
 }
 
 } // namespace wickqc::test
+
+#if defined(WICKQC_ENABLE_AO2MO)
+#include <numbers>
+const void* OtherMutex();
+double OtherTransform(const ao2mo::Basis&);
+TEST(HeaderOnly, IntegralTwoTranslationUnits) {
+  // A normalized single s Gaussian, with independently known Coulomb integral.
+  ao2mo::Basis basis;
+  basis.atm = {2, 20, 1, 0, 0, 0};
+  basis.bas = {0, 0, 1, 1, 0, 23, 24, 0};
+  basis.env.resize(25);
+  basis.env[23] = 1;
+  basis.env[24] = CINTgto_norm(0, 1);
+  const auto expected = 2 / std::sqrt(std::numbers::pi);
+  if (std::abs(OtherTransform(basis) - expected) > 1e-13) {
+    FAIL() << "Check 1 failed";
+  }
+  auto coefficients = std::make_shared<ao2mo::Coefficients<ao2mo::Complex>>();
+  coefficients->nao = coefficients->nmo = 1;
+  coefficients->alpha = {{0.3, 0.4}};
+  coefficients->beta = {{std::sqrt(0.75), 0}};
+  const auto requests = ao2mo::ProfileRequests<ao2mo::Complex>(
+      ao2mo::Profile::kSpinorDense, coefficients, {0, 1, 1, 0});
+  ao2mo::Options options;
+  options.workspace = ao2mo::Workspace::kIncore;
+  options.audit = ao2mo::AuditMode::kAudit;
+  const auto result = ao2mo::Transform(basis, requests, options);
+  if (std::abs(result.blocks.at(0).values.at(0) - expected) > 1e-13) {
+    FAIL() << "Check 2 failed";
+  }
+  if (OtherMutex() != &ao2mo::h5::ExecutionMutex()) {
+    FAIL() << "Check 3 failed";
+  }
+  // Check both complex components through the public planning API.
+  const auto inf = std::numeric_limits<double>::infinity();
+  const auto nan = std::numeric_limits<double>::quiet_NaN();
+  for (const ao2mo::Complex invalid :
+       {ao2mo::Complex{inf, 0}, {0, inf}, {nan, 0}, {0, nan}}) {
+    coefficients->beta[0] = invalid;
+    try {
+      ao2mo::MakePlan(basis, requests, options);
+      FAIL() << "Check 4 failed";
+    } catch (const std::invalid_argument&) { // NOLINT(bugprone-empty-catch)
+      // Expected rejection is the successful test path.
+    }
+  }
+}
+#endif

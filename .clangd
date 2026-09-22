@@ -20,3 +20,10 @@ If:
   PathMatch: src/backend/tblis\.hpp
 CompileFlags:
   CompilationDatabase: build/tblis
+
+---
+# AO2MO is optional; the default build intentionally has no libcint/CBLAS flags.
+If:
+  PathMatch: [src/ao2mo\.hpp, src/ao2mo/.*, example/wick_.*\.cpp, unit_test/test_integrals\.cpp, unit_test/test_hdf5\.cpp, test/.*\.(cpp|hpp)]
+CompileFlags:
+  CompilationDatabase: build/merge-openblas

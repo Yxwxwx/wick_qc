@@ -16,4 +16,5 @@ struct NamedKernel {
 };
 // Generated at build time from every ICNEVPT2Generator::Equations() block.
 [[nodiscard]] std::span<const NamedKernel> ICNEVPT2Kernels();
+[[nodiscard]] std::span<const NamedKernel> SCNEVPT2Kernels();
 } // namespace wickqc::example

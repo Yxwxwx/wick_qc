@@ -525,6 +525,7 @@ inline std::string ICNEVPT2Generator::GenerateNumpy() const {
            << '\n'
            << "hexp12[..., 1, 1] = hexp\n\n"
            << "dcas = ncas ** " << names.ket_to_bra.size() << '\n'
+           << "if dcas == 0:\n    return 0.0\n"
            << "xr = rheq12.reshape((-1, dcas * 2))\n"
            << "xh = hexp12.reshape((-1, dcas, dcas, 2, 2))\n"
            << "xh = xh.transpose(0, 1, 3, 2, 4)\n"
@@ -536,6 +537,7 @@ inline std::string ICNEVPT2Generator::GenerateNumpy() const {
       } else {
         body << "dcas = ncas ** " << names.ket_to_bra.size() << '\n';
       }
+      body << "if dcas == 0:\n    return 0.0\n";
       if (names.tensor_indices.size() - names.ket_to_bra.size() * 2 >= 2) {
         body << Restrict(rhs, names.restrict_active, names.strict)
              << "xr = rheq[idx].reshape((-1, dcas))\n"
@@ -546,7 +548,8 @@ inline std::string ICNEVPT2Generator::GenerateNumpy() const {
              << "xh = hexp.reshape((-1, dcas, dcas))\n\n";
       }
     }
-    body << "return -(np.linalg.solve(xh, xr) * xr).sum()\n";
+    body << "return -sum(np.dot(np.linalg.lstsq(h, r, rcond=None)[0], r) "
+            "for h, r in zip(xh, xr))\n";
     functions << "def compute_" << names.function_name << "():\n"
               << Indent(body.str()) << '\n';
   }

@@ -147,7 +147,7 @@ TEST(Transpose, ConservativeHeuristicAndByteBoundary) {
   EXPECT_FALSE(ShouldUseHptt<double>(*layout, {bytes + 1, 1}));
   EXPECT_EQ(ShouldUseHptt<double>(*layout, {bytes, 1}), kHpttAvailable);
   EXPECT_FALSE(ShouldUseHptt<int>(*layout, kExerciseHptt));
-  for (const std::vector<int> simple :
+  for (const std::vector<int>& simple :
        {std::vector<int>{0, 1, 2, 3}, {2, 3, 0, 1}, {2, 1, 0, 3}}) {
     const Array destination(source.TransposeView(simple).shape());
     const auto description = DescribeDenseLayout(

@@ -36,6 +36,8 @@ class SpatialEvaluator {
   [[nodiscard]] bool IsPrecompiled() const noexcept;
   [[nodiscard]] const std::vector<TensorBinding>& Inputs() const;
   [[nodiscard]] const std::vector<TensorBinding>& Outputs() const;
+  [[nodiscard]] std::optional<std::size_t> WorkspaceElements(
+      const Dimensions& dimensions) const;
   [[nodiscard]] TensorMap<double> Evaluate(
       const TensorMap<double>& inputs,
       const Dimensions& dimensions) const;
@@ -108,6 +110,15 @@ inline const std::vector<TensorBinding>& SpatialEvaluator::Outputs() const {
     return std::get<const NumericKernel*>(implementation_)->Outputs();
   }
   return std::get<NDArrayExecutor>(implementation_).Outputs();
+}
+inline std::optional<std::size_t> SpatialEvaluator::WorkspaceElements(
+    const Dimensions& dimensions) const {
+  if (IsPrecompiled()) {
+    return std::get<const NumericKernel*>(implementation_)
+        ->WorkspaceElements(dimensions);
+  }
+  return std::get<NDArrayExecutor>(implementation_)
+      .WorkspaceElements(dimensions);
 }
 inline TensorMap<double> SpatialEvaluator::Evaluate(
     const TensorMap<double>& inputs,

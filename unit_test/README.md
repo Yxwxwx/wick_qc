@@ -1,43 +1,41 @@
-# C++ unit tests
+# Component tests
 
-This directory contains focused GTest tests. It does not contain method drivers,
-reference source copies, generated formulas, or molecular output files.
+One main GTest source per component. Inputs are small analytic/synthetic tensors;
+no test here needs molecular fixtures, PySCF, block2 or the functional tests.
 
-| File | Checks |
+| File | Component and checks |
 | --- | --- |
-| `test_wick.cpp` | Fermion algebra, spin-free metric, chemist symmetry, substitution, serialization, graph coefficient regression |
-| `test_ndarray.cpp` | Views/ownership, reductions, ellipsis, broadcasting, integer labels, invalid and empty inputs |
-| `test_backend.cpp` | Real/complex backend contractions against explicit loops, strides, batches, alpha/beta, padded GEMM output |
-| `test_mp2.cpp` | Spatial MP2 energy and residuals against the denominator formula |
-| `test_lapack.cpp` | Over-/underdetermined and rank-deficient minimum-norm solves, cutoff equality and DGELSD fallback, input preservation and invalid inputs |
-| `test_transpose.cpp` | All 4D permutations with unequal runtime extents, real/complex HPTT vs native, views, materialization, heuristic gates, arbitrary strides, alpha/beta, empty/scalar and overlap fallbacks |
-| `test_header_only.cpp`, `header_only_peer.cpp` | Umbrella-only consumers in two translation units, serialization and runtime tensor dimensions without a core object library |
-| `test_codegen.cpp` | Generated CCSD and all 13 IC-NEVPT2 kernels against unoptimized equations, real/complex arithmetic |
+| `test_wick.cpp` | Wick algebra, symmetry, substitution, serialization, graph coefficient regression |
+| `test_ndarray.cpp` | Views/ownership, reductions, broadcasting, labels, empty/invalid inputs |
+| `test_backend.cpp` | Real/complex contractions vs explicit loops, strides, batches, alpha/beta |
+| `test_rhf.cpp` | RHF bindings, analytic MP2, CCSD convergence/residuals and memory preflight |
+| `test_nevpt2.cpp` | SC/IC assembly, restrictions, coupled/empty spaces, least-squares and budgets |
+| `test_lapack.cpp` | Minimum-norm solves, rank deficiency, cutoff semantics and input preservation |
+| `test_transpose.cpp` | Unequal runtime dimensions, views, HPTT/native semantics and fallback gates |
+| `test_codegen.cpp` | Generated CCSD/all IC kernels vs unoptimized equations, real/complex |
+| `test_header_only.cpp` | Umbrella consumer, ODR and optional integral module |
+| `test_integrals.cpp` | Analytic real/spinor AO→MO, layouts, storage, getters, prepared reuse, corruption/budget rejection |
+| `test_hdf5.cpp` | Write/close/flush failures, handle cleanup and preservation of caller-owned data |
 
-`wickqc_unit_tests` builds the first four files independently of examples.
-`wickqc_codegen_tests` separately checks the generated-example kernels.
-`wickqc_lapack_tests` checks the selected LAPACK provider independently.
-MKL, OpenBLAS, Netlib, and Eigen use the same tests. Eigen also runs the
-real/complex contraction tests with dynamic dimensions.
-`wickqc_transpose_tests` independently checks materialized transpose selection.
-Run it with HPTT both enabled (`-DWICKQC_ENABLE_HPTT=ON`) and disabled. The
-tests explicitly lower the byte gate to exercise actual HPTT calls on small
-fixtures; that setting is not a calibrated performance threshold.
+`header_only_peer.cpp` is the required second translation unit of the ODR test.
+The integral and HDF5 fault tests use GNU-compatible linker wrapping; production
+has no fault-injection hooks. Integral tests are enabled with the optional
+libcint/HDF5 module. They remain part of the unified wick_qc test suite.
 
-The dimensions come from `WICKQC_TEST_OCCUPIED`, `WICKQC_TEST_ACTIVE` and
-`WICKQC_TEST_VIRTUAL` at process launch. CTest runs the same executable twice
-with different dimensions. Fixed seeds and explicit absolute/relative tolerances
-make the comparisons reproducible. Complex checks validate tensor algebra under
-the existing symmetry conventions, not a general complex-orbital QC method.
+Each target is named `wickqc_<component>_tests`. CTest labels component tests
+`unit`. Runtime dimensions come from `WICKQC_TEST_OCCUPIED`,
+`WICKQC_TEST_ACTIVE` and `WICKQC_TEST_VIRTUAL`; most executables run twice with
+different shapes. Integral tests use unequal coefficient-family dimensions.
+All comparisons have explicit tolerances and deterministic inputs.
 
 ```sh
 module load googletest/1.15.0
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j 4
-ctest --test-dir build --output-on-failure
+cmake -S . -B build -DWICKQC_PRECOMPILE_MP=2 -DWICKQC_PRECOMPILE_CC=2
+cmake --build build -j 1
+ctest --test-dir build --output-on-failure -L unit -j 1
 ```
 
-Configure another build with `-DEINSUM_BACKEND=TBLIS` (and `TBLIS_ROOT`) to run
-the same tests on TBLIS. `-DWICKQC_BUILD_EXAMPLES=OFF` omits the generated-example
-integration tests but keeps the Wick/NDArray/backend/MP2 unit tests.
-`-DBUILD_TESTING=OFF` removes the GTest requirement from library/example builds.
+`WICKQC_BUILD_EXAMPLES=OFF` does not disable component/code-generation tests.
+`BUILD_TESTING=OFF` removes the GTest requirement. The same component targets
+exercise the selected einsum/LAPACK/transpose backends; HPTT tests deliberately
+lower the gate to cover actual calls, not to recommend a performance threshold.

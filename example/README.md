@@ -34,12 +34,12 @@ shown in the emitted fragments/functions.
 
 ## Generate numeric C++ during the build
 
-`build_time/CMakeLists.txt` contains two custom commands:
+`../cmake/MethodKernels.cmake` contains the shared generation commands:
 
 1. `generate_cpp cc 2 chemist example_ccsd OUTPUT.generated.cpp` derives and
    emits spatial CCSD through `CPPEmitter::Render`.
 2. `example_generate_nevpt2 OUTPUT_DIRECTORY` visits every
-   `ICNEVPT2Generator::Equations()` block and emits 13 `.generated.cpp` files plus
+   `ICNEVPT2Generator::Equations()` block and emits 13 IC and 8 SC `.generated.cpp` files plus
    a small kernel registry. All RHS and Hamiltonian components of the coupled
    `irabpq` block are included.
 
@@ -109,5 +109,22 @@ CCSD Jacobi update after inverting the covariant spin metric. It accepts:
 
 `compiled` requires the selected method/convention to be precompiled; it never
 falls back silently. `runtime` constructs the Wick equations once per method.
-See [`../test/README.md`](../test/README.md) for the PySCF script that prepares
-these files and independently validates energies, amplitudes and residuals.
+The molecular functional tests in [`../test/`](../test/README.md) use fixed
+HDF5 data and the complete method solvers; they do not import PySCF.
+
+## Integral input and host adapters
+
+With `WICKQC_ENABLE_AO2MO=ON`, `wick_mp2.cpp` and `wick_spinor_mp2.cpp` show
+how transformed blocks become NDArray inputs. Their targets are
+`example_wick_mp2` and `example_wick_spinor_mp2`. The complex example evaluates
+the energy equation; it does not claim general complex CCSD support.
+
+`scalar.py`, `spinor.py`, `export_input.py` and `export_reference.py` are
+optional upstream data-export examples. They may use PySCF/block2 (and socutils
+for the spinor example); the C++ project does not require these packages.
+`read_helper.py` reads exported integral blocks with NumPy/h5py.
+
+Complete MP2/CCSD and SC/IC-NEVPT2 file-based drivers live in `test/rhf.cpp`
+and `test/nevpt2.cpp`, alongside their fixed molecular fixtures. Both call the
+same public C++ solvers that a host program would use. See the
+[functional test guide](../test/README.md) for invocation and data conventions.

@@ -190,7 +190,18 @@ inline std::string CPPEmitter::Render(
     }
     out << (bindings == &program.inputs_ ? "},\n{" : "},\n");
   }
-  out << "&Evaluate<double>, &Evaluate<std::complex<double>>};\nreturn kKernel;\n}\n} // namespace wickqc::generated\n";
+  out << "&Evaluate<double>, &Evaluate<std::complex<double>>,\nstd::vector<runtime::WorkspaceTerm>{";
+  for (const auto& term : program.workspace_) {
+    out << '{' << term.count << ",{";
+    for (std::size_t i = 0; i < term.domains.size(); ++i) {
+      const auto domain = term.domains[i];
+      out << (i ? "," : "") << '{'
+          << static_cast<unsigned>(domain.orbital_spaces) << ','
+          << static_cast<unsigned>(domain.spins) << '}';
+    }
+    out << "}},";
+  }
+  out << "}};\nreturn kKernel;\n}\n} // namespace wickqc::generated\n";
   return out.str();
 }
 } // namespace wickqc::codegen

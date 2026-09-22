@@ -1,0 +1,38 @@
+# Only the comparison harness needs Python, NumPy and h5py. PySCF/block2 are
+# offline fixture producers and are deliberately absent from dependency checks.
+option(WICKQC_BUILD_FUNCTIONAL_TESTS "Build fixed-data method comparisons" ON)
+if(NOT WICKQC_BUILD_FUNCTIONAL_TESTS)
+  return()
+endif()
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+execute_process(COMMAND "${Python3_EXECUTABLE}" -c "import numpy, h5py"
+  RESULT_VARIABLE missing_python_packages ERROR_QUIET)
+if(missing_python_packages)
+  message(FATAL_ERROR "Functional test harness needs NumPy and h5py; select Python3_EXECUTABLE or set WICKQC_BUILD_FUNCTIONAL_TESTS=OFF. PySCF is not required.")
+endif()
+foreach(method IN ITEMS rhf nevpt2 reference)
+  add_executable(wickqc_test_${method} ${method}.cpp)
+  target_link_libraries(wickqc_test_${method} PRIVATE wickqc::wickqc)
+endforeach()
+target_link_libraries(wickqc_test_rhf PRIVATE wickqc_precompiled)
+target_link_libraries(wickqc_test_nevpt2 PRIVATE wickqc_example_kernels)
+foreach(suite IN ITEMS mp2_ccsd nevpt2 reference)
+  if(suite STREQUAL "mp2_ccsd")
+    set(driver rhf)
+  else()
+    set(driver ${suite})
+  endif()
+  set(arguments "")
+  if(suite STREQUAL "nevpt2")
+    list(APPEND arguments --generator $<TARGET_FILE:example_einsum>)
+  elseif(suite STREQUAL "mp2_ccsd")
+    if(NOT "2" IN_LIST WICKQC_PRECOMPILE_MP OR NOT "2" IN_LIST WICKQC_PRECOMPILE_CC OR
+        NOT "chemist" IN_LIST WICKQC_PRECOMPILE_CONVENTIONS)
+      list(APPEND arguments --runtime-only)
+    endif()
+  endif()
+  add_test(NAME methods_${suite} COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/${suite}.py" $<TARGET_FILE:wickqc_test_${driver}> ${arguments})
+  set_tests_properties(methods_${suite} PROPERTIES LABELS "functional"
+    ENVIRONMENT "OMP_NUM_THREADS=1;TBLIS_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1;MKL_NUM_THREADS=1;BLIS_NUM_THREADS=1;PYTHONDONTWRITEBYTECODE=1")
+endforeach()

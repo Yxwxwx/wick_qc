@@ -25,6 +25,15 @@ TEST(NDArray, SlicesAreViewsAndClonesOwnData) {
   EXPECT_DOUBLE_EQ(array.At({0, n - 1}), -1);
   EXPECT_DOUBLE_EQ(clone.At({0, 0}), static_cast<double>(n - 1));
   EXPECT_EQ(array.TransposeView({1, 0}).shape(), (Array::Shape{n, m}));
+  const std::vector<Array> views{
+      array.Slice("0:1,:"), reversed, array.TransposeView({1, 0})};
+  EXPECT_EQ(Array::StorageBytes(views), m * n * sizeof(double));
+  auto with_clone = views;
+  with_clone.push_back(clone);
+  EXPECT_EQ(Array::StorageBytes(with_clone), 2 * m * n * sizeof(double));
+  const Array borrowed(
+      {m, n}, {static_cast<std::ptrdiff_t>(n), 1}, array.data());
+  EXPECT_EQ(Array::StorageBytes(std::vector{borrowed}), m * n * sizeof(double));
 }
 
 TEST(NDArray, DiagonalUnaryReductionAndRuntimeEllipsis) {

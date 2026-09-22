@@ -38,6 +38,10 @@ class NDArrayExecutor {
   [[nodiscard]] const std::vector<TensorBinding>& Outputs() const noexcept {
     return outputs_;
   }
+  [[nodiscard]] std::size_t WorkspaceElements(
+      const Dimensions& dimensions) const {
+    return runtime::WorkspaceElements(workspace_, dimensions);
+  }
 
   template <typename T>
   [[nodiscard]] TensorMap<T> Evaluate(
@@ -70,6 +74,7 @@ class NDArrayExecutor {
   std::vector<TensorBinding> inputs_;
   std::vector<TensorBinding> outputs_;
   std::vector<Assignment> assignments_;
+  std::vector<WorkspaceTerm> workspace_;
 };
 
 namespace ndarray_executor_detail {
@@ -281,6 +286,88 @@ inline NDArrayExecutor NDArrayExecutor::Compile(
   }
   for (const auto& [name, binding] : required) {
     result.inputs_.push_back(binding);
+  }
+
+  // Bound payload without changing contraction order. NDArray reduces unique
+  // labels, then contracts left to right. Count dense copies for strided/BLAS
+  // packing even when views or TBLIS avoid them. Keeping every assignment live
+  // overestimates the release schedule; this is a preflight bound, not an
+  // allocation forecast. A per-monomial maximum bounds every contraction.
+  using Polynomial = std::map<std::vector<symbolic::IndexDomain>, std::size_t>;
+  Polynomial retained, contraction_peak;
+  const auto add = [](Polynomial& polynomial,
+                      std::vector<symbolic::IndexDomain> axes,
+                      std::size_t count) {
+    std::ranges::sort(axes);
+    polynomial[axes] = memory_detail::Add(polynomial[axes], count);
+  };
+  for (const auto& assignment : result.assignments_) {
+    add(retained, assignment.output.domains, 3);
+    // Covers one-element default NDArray temporaries used while forming views
+    // and contraction results, including otherwise entirely empty tensors.
+    add(retained, {}, 8);
+    for (const auto& term : assignment.terms) {
+      Polynomial work;
+      std::map<int, symbolic::IndexDomain> domains;
+      std::map<int, std::size_t> frequency;
+      std::vector<std::set<int>> labels;
+      for (std::size_t i = 0; i < term.operands.size(); ++i) {
+        add(work, term.operands[i].binding.domains, 3);
+        labels.emplace_back(term.indices[i].begin(), term.indices[i].end());
+        for (const auto label : labels.back()) {
+          ++frequency[label];
+        }
+        for (std::size_t axis = 0; axis < term.indices[i].size(); ++axis) {
+          domains.emplace(
+              term.indices[i][axis], term.operands[i].binding.domains[axis]);
+        }
+      }
+      const std::set<int> output(
+          term.output_indices.begin(), term.output_indices.end());
+      const auto record = [&](const std::set<int>& indices) {
+        std::vector<symbolic::IndexDomain> axes;
+        axes.reserve(indices.size());
+        for (const auto label : indices) {
+          axes.push_back(domains.at(label));
+        }
+        add(work, std::move(axes), 3);
+      };
+      for (auto& indices : labels) {
+        std::erase_if(indices, [&](int label) {
+          return frequency[label] == 1 && !output.contains(label);
+        });
+        record(indices);
+      }
+      if (!labels.empty()) {
+        auto current = labels.front();
+        for (std::size_t i = 1; i < labels.size(); ++i) {
+          std::set<int> future;
+          for (std::size_t j = i + 1; j < labels.size(); ++j) {
+            future.insert(labels[j].begin(), labels[j].end());
+          }
+          auto next = current;
+          for (const auto label : labels[i]) {
+            if (current.contains(label) && !output.contains(label) &&
+                !future.contains(label)) {
+              next.erase(label);
+            } else {
+              next.insert(label);
+            }
+          }
+          current = std::move(next);
+          record(current);
+        }
+      }
+      for (const auto& [axes, count] : work) {
+        contraction_peak[axes] = std::max(contraction_peak[axes], count);
+      }
+    }
+  }
+  for (const auto& [axes, count] : contraction_peak) {
+    add(retained, axes, count);
+  }
+  for (auto& [axes, count] : retained) {
+    result.workspace_.push_back({count, axes});
   }
   return result;
 }

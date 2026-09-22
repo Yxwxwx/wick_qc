@@ -26,6 +26,7 @@
 #include <optional>
 #include <ostream>
 #include <random>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -339,6 +340,28 @@ class NDArray {
 
   [[nodiscard]] bool OwnsData() const noexcept {
     return static_cast<bool>(storage_);
+  }
+
+  // Count each shared allocation once, including storage outside a slice.
+  // Borrowed arrays conservatively count their spans separately. Allocator
+  // bookkeeping and memory owned by BLAS/TBLIS are not tensor payload.
+  [[nodiscard]] static std::size_t StorageBytes(
+      std::span<const NDArray> arrays) {
+    std::unordered_set<const std::vector<T>*> owners;
+    std::size_t elements = 0;
+    for (const auto& array : arrays) {
+      const auto count = array.storage_
+          ? (owners.insert(array.storage_.get()).second
+                 ? array.storage_->capacity()
+                 : 0)
+          : (array.data_ ? array.MaxStorageSpan() : 0);
+      if (count >
+          std::numeric_limits<std::size_t>::max() / sizeof(T) - elements) {
+        throw std::overflow_error("NDArray storage payload exceeds size_t");
+      }
+      elements += count;
+    }
+    return elements * sizeof(T);
   }
 
   [[nodiscard]] std::size_t MaxStorageSpan() const noexcept {

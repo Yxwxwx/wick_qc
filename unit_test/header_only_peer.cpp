@@ -29,3 +29,27 @@ decltype(&symbolic::SignedPermutation::Identity) HeaderOnlyIdentityAddress() {
 }
 
 } // namespace wickqc::test
+
+#if defined(WICKQC_ENABLE_AO2MO)
+#include <ao2mo/transform.hpp>
+
+const void* OtherMutex() {
+  return &ao2mo::h5::ExecutionMutex();
+}
+
+double OtherTransform(const ao2mo::Basis& basis) {
+  auto coefficients = std::make_shared<ao2mo::Coefficients<double>>();
+  coefficients->nao = coefficients->nmo = 1;
+  coefficients->alpha = {1};
+  ao2mo::Request<double> request;
+  for (auto& index : request.indices) {
+    index = {coefficients, {0}};
+  }
+  ao2mo::Options options;
+  options.workspace = ao2mo::Workspace::kIncore;
+  return ao2mo::Transform(basis, std::vector{request}, options)
+      .blocks.at(0)
+      .values.at(0);
+}
+
+#endif

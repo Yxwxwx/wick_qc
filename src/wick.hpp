@@ -7,6 +7,8 @@
 #include "einsum/einsum.hpp" // IWYU pragma: export
 #include "equation/graph.hpp" // IWYU pragma: export
 #include "method/nevpt2.hpp" // IWYU pragma: export
+#include "method/nevpt2_solver.hpp" // IWYU pragma: export
+#include "method/reference.hpp" // IWYU pragma: export
 #include "method/rhf.hpp" // IWYU pragma: export
 #include "method/spatial.hpp" // IWYU pragma: export
 #include "method/specification.hpp" // IWYU pragma: export
@@ -21,4 +23,10 @@
 #if defined(WICKQC_LAPACK_MKL) || defined(WICKQC_LAPACK_OPENBLAS) || \
     defined(WICKQC_LAPACK_NETLIB) || defined(WICKQC_LAPACK_EIGEN)
 #include "backend/lapack.hpp" // IWYU pragma: export
+#endif
+
+#if defined(WICKQC_ENABLE_AO2MO)
+#include "ao2mo.hpp" // IWYU pragma: export
+#include "ao2mo/reference.hpp" // IWYU pragma: export
+#include "ao2mo/wick_adapter.hpp" // IWYU pragma: export
 #endif

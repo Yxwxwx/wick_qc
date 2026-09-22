@@ -31,8 +31,7 @@ add_subdirectory(wick_qc EXCLUDE_FROM_ALL)
 target_link_libraries(host PRIVATE wickqc::wickqc)
 ```
 
-The core is organized into 19 headers; the only `.cpp` under `src/` is the
-code-generation command-line program. Related pieces share a module header:
+Related pieces share a module header:
 Wick algebra and serialization, tensor equations and graph optimization,
 einsum lowering and NumPy rendering, numeric contracts, MP/CC generators,
 and the two NEVPT2 generators.
@@ -48,9 +47,10 @@ and the two NEVPT2 generators.
 | `src/runtime/` | Tensor contracts, numeric executors and precompiled-kernel dispatch |
 | `src/method/` | QC method equations and the RHF input adapter |
 | `src/codegen/` | C++ emitter and the build's `generate_cpp` executable |
+| `src/ao2mo.hpp`, `src/ao2mo/` | Optional header-only libcint AO→MO transformation and HDF5 I/O |
 | [`unit_test/`](unit_test/README.md) | Focused C++ GTest tests with runtime dimensions |
 | [`example/`](example/README.md) | Einsum text, CMake code generation and C++ host examples |
-| [`test/`](test/README.md) | Python/PySCF MP2 and CCSD numerical comparisons |
+| [`test/`](test/README.md) | Fixed-data AO→MO and MP2/CCSD/NEVPT2 functional tests |
 
 The build's C++ generator lives with its implementation in `src/codegen/`.
 Examples demonstrate the public APIs, while unit tests verify their behavior.
@@ -73,13 +73,80 @@ not a build dependency.
 ```bash
 module load googletest/1.15.0
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j 4
+cmake --build build -j 1
 ctest --test-dir build --output-on-failure
 ```
 
 Use `-DBUILD_TESTING=OFF` to omit GTest, and
 `-DWICKQC_BUILD_EXAMPLES=OFF` to omit demonstration programs. The core
 precompiled method library remains controlled by `WICKQC_PRECOMPILE_*`.
+
+### Optional integral module
+
+`WICKQC_ENABLE_AO2MO=ON` adds libcint and HDF5 to `wickqc::wickqc` and exposes
+integral transformation, reference I/O and method preparation through
+`#include <wick.hpp>`. It is a wick_qc module. The narrower `ao2mo.hpp`,
+`wickqc::ao2mo` and legacy `ao2mo::ao2mo` aliases remain available for existing
+consumers. The two-pass integral algorithm and its memory budget are unchanged.
+
+```sh
+module load googletest/1.15.0
+cmake -S . -B build/full -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DWICKQC_ENABLE_AO2MO=ON \
+  -DEINSUM_BACKEND=OPENBLAS -DLAPACK_BACKEND=OPENBLAS \
+  -DWICKQC_PRECOMPILE_MP=2 -DWICKQC_PRECOMPILE_CC=2
+cmake --build build/full -j 1
+ctest --test-dir build/full --output-on-failure -j 1
+build/full/bin/wickqc_integrals --version
+```
+
+By default libcint 6.1.3 is fetched at commit
+`c72d30662ba08048940c9000cc352a220c867712` and built in the output directory.
+Supply `CINT_INCLUDE_DIR` and `CINT_LIBRARY` for an installed library, or
+`FETCHCONTENT_SOURCE_DIR_LIBCINT` for offline source. Existing `cint::cint` or
+`cint` targets also work. `AO2MO_FETCH_LIBCINT=OFF` disables downloading.
+The integral CLI is optional (`WICKQC_BUILD_AO2MO_CLI=OFF`).
+
+The integral module needs LP64 real/complex CBLAS. Its provider comes from
+`EINSUM_BACKEND` when that backend is MKL, OpenBLAS, Netlib or BLIS; otherwise
+it uses `LAPACK_BACKEND`. A CBLAS provider and BLAS-based LAPACK must match.
+MKL requires `-DMKL_INTERFACE=lp64`. Eigen/Eigen has no CBLAS and cannot enable
+this optional module; existing core configurations remain supported.
+
+`ao2mo/wick_adapter.hpp` provides `WickBuffer` for direct writes into owned
+NDArray storage. Shape and strides are runtime data; permutations and slices
+remain views. `ToWick` materializes an integral view with explicit payload
+accounting. Control BLAS threads in the host and integral OpenMP workers with
+`Options::threads`; no library entry point changes the host's global policy.
+
+`ao2mo/reference.hpp` supplies `ReadReference`, `PrepareRHF` (requested ERI
+blocks), and `PrepareNEVPT2` (four base blocks plus views). `method/rhf.hpp`
+provides `SolveMP2` and `SolveCCSD`; `method/nevpt2_solver.hpp` provides
+`SolveSCNEVPT2` and `SolveICNEVPT2`. IC/FIC retains the full minimum-norm SVD
+solve with the NumPy `lstsq(rcond=None)` cutoff. Outcore AO transformation does
+not make method contractions outcore. `runtime::MemoryBudget` covers controlled
+payload, not process RSS or external-library workspaces.
+
+### Tests and reference data
+
+`unit_test/` has one main C++ test file per component (the header-only test
+needs a second translation unit). `test/` contains functional tests reading
+committed AO integrals, orbitals, RDMs and independent expected results from
+`test/data/`. Molecular dimensions and all tensor values are runtime inputs.
+The default functional path transforms stored AO integrals with C++ NDArray;
+selective incore/outcore libcint paths are cross-checked on the same orbitals.
+
+**PySCF and block2 are not project or normal-test dependencies.** Only the
+explicit offline command `test/generate_data.py` and optional Python export
+examples use them. The functional comparison harness needs Python, NumPy and
+h5py; select its interpreter with `Python3_EXECUTABLE`, or disable that harness
+with `WICKQC_BUILD_FUNCTIONAL_TESTS=OFF`. C++ unit tests need no Python.
+`BUILD_TESTING=OFF` requires neither GTest nor a Python interpreter.
+
+See [the test guide](test/README.md) for data provenance, tolerances, regeneration
+and the retained LiH triplet full-IC conditioning reproducer. Export helpers
+are [export_input.py](example/export_input.py) (`ao2mo.input.v1`) and
+[export_reference.py](example/export_reference.py) (`wickqc.reference.v1`).
 
 There are two independent backend selectors. `EINSUM_BACKEND` selects `NATIVE`
 (default), `SIMPLE`, `TBLIS`, `MKL`, `OPENBLAS`, `BLIS`, `NETLIB`, or `EIGEN`; `LAPACK_BACKEND`

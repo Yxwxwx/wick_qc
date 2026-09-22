@@ -10,6 +10,8 @@ enum class IntegralConvention : std::uint8_t { kPhysicist, kChemist };
 
 enum class SpatialFamily : std::uint8_t { kMP, kCC };
 
+enum class NEVPT2Method : std::uint8_t { kSC, kIC };
+
 struct SpatialMethod {
   SpatialFamily family = SpatialFamily::kMP;
   // Perturbation order for MP; maximum excitation rank for CC.

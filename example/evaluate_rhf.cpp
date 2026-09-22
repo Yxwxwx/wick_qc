@@ -27,19 +27,6 @@ using wickqc::runtime::GenerationPolicy;
 using wickqc::runtime::SpatialEvaluator;
 using wickqc::runtime::TensorMap;
 
-double Gap(
-    const Array& energies,
-    std::size_t occupied,
-    std::size_t a,
-    std::size_t i) {
-  const double gap = energies.At({i}) - energies.At({occupied + a});
-  if (!std::isfinite(gap) || gap >= -1e-10) {
-    throw std::invalid_argument(
-        "Expected negative occupied-virtual orbital-energy gaps");
-  }
-  return gap;
-}
-
 void Evaluate(
     const std::filesystem::path& input,
     const std::filesystem::path& output,
@@ -60,19 +47,8 @@ void Evaluate(
       ReadTensor(input / "fock.bin", {nmo, nmo}),
       ReadTensor(input / "eri_chemist.bin", {nmo, nmo, nmo, nmo})};
   const auto domains = data.Dimensions();
-  Array mp2_doubles({nvir, nvir, nocc, nocc});
-  for (std::size_t a = 0; a < nvir; ++a) {
-    for (std::size_t b = 0; b < nvir; ++b) {
-      for (std::size_t i = 0; i < nocc; ++i) {
-        for (std::size_t j = 0; j < nocc; ++j) {
-          mp2_doubles.At({a, b, i, j}) =
-              data.chemist_integrals.At({nocc + a, i, nocc + b, j}) /
-              (Gap(data.orbital_energies, nocc, a, i) +
-               Gap(data.orbital_energies, nocc, b, j));
-        }
-      }
-    }
-  }
+  const auto mp2_doubles =
+      wickqc::method::MP2Amplitudes(data, convention).doubles;
   const SpatialEvaluator mp(
       {SpatialFamily::kMP, 2, convention},
       policy,
@@ -97,24 +73,8 @@ void Evaluate(
       domains);
   const auto& r1 = initial.at("residual1");
   const auto& r2 = initial.at("residual2");
-  auto next1 = t1.Clone(), next2 = t2.Clone();
-  // E1 projectors give r1=2*R1, r2(abij)=4*R2(abij)-2*R2(abji).
-  // Invert that spin metric before Jacobi: t_new = t + R/(eps_occ-eps_vir).
-  for (std::size_t a = 0; a < nvir; ++a) {
-    for (std::size_t i = 0; i < nocc; ++i) {
-      next1.At({a, i}) +=
-          r1.At({a, i}) / (2 * Gap(data.orbital_energies, nocc, a, i));
-      for (std::size_t b = 0; b < nvir; ++b) {
-        for (std::size_t j = 0; j < nocc; ++j) {
-          const double residual =
-              r2.At({a, b, i, j}) / 3 + r2.At({a, b, j, i}) / 6;
-          next2.At({a, b, i, j}) += residual /
-              (Gap(data.orbital_energies, nocc, a, i) +
-               Gap(data.orbital_energies, nocc, b, j));
-        }
-      }
-    }
-  }
+  const auto [next1, next2] = wickqc::method::CCSDStep(
+      data, {t1, t2}, wickqc::method::CCSDResiduals(r1, r2));
   const auto first = cc.Evaluate(
       data.Bind(cc.Inputs(), {{"tEI", next1}, {"tEEII", next2}}, convention),
       domains);

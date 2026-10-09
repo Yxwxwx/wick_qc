@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 
 namespace {
@@ -18,6 +19,71 @@ using wickqc::method::RHFAmplitudes;
 using wickqc::method::RHFData;
 using wickqc::method::SolveCCSD;
 using wickqc::method::SolveMP2;
+using wickqc::method::SolveSpatialMP;
+TEST(SpatialMP, OrdersTwoThroughFiveMatchDeterminantPerturbation) {
+  RHFData data;
+  data.occupied = 1;
+  data.orbital_energies = NDArray<double>({2});
+  data.orbital_energies.At({0}) = -1;
+  data.orbital_energies.At({1}) = 1;
+  data.fock = NDArray<double>({2, 2});
+  data.fock.At({0, 0}) = -1;
+  data.fock.At({1, 1}) = 1;
+  data.chemist_integrals = NDArray<double>({2, 2, 2, 2});
+  for (std::size_t p = 0; p < 2; ++p) {
+    for (std::size_t q = 0; q < 2; ++q) {
+      for (std::size_t r = 0; r < 2; ++r) {
+        for (std::size_t s = 0; s < 2; ++s) {
+          data.chemist_integrals.At({p, q, r, s}) =
+              0.1 / static_cast<double>(1 + p + q + r + s);
+        }
+      }
+    }
+  }
+  // Independent 2-electron spin-orbital determinant H = H0 + lambda V.
+  const std::array<double, 4> expected{
+      -0.0002777777777777778,
+      0.0000037037037037037,
+      -0.0000000734953703704,
+      0.0000000017676183128};
+  const auto result = SolveSpatialMP(data, 5, -1.9);
+  ASSERT_EQ(result.order_energies.size(), expected.size());
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(result.order_energies[i], expected[i], 1e-11);
+  }
+  EXPECT_NEAR(result.total_energy, -1.9 + result.correlation_energy, 1e-12);
+  EXPECT_THROW(
+      (void)wickqc::method::SpatialMPPlan(1, 1, 1), std::invalid_argument);
+}
+
+TEST(SpatialMP, TwoOccupiedTwoVirtualMatchDeterminantPerturbation) {
+  RHFData data;
+  data.occupied = 2;
+  data.orbital_energies = NDArray<double>({4}, {-1.2, -0.8, 0.5, 1.0});
+  data.fock = NDArray<double>({4, 4});
+  data.chemist_integrals = NDArray<double>({4, 4, 4, 4});
+  for (std::size_t p = 0; p < 4; ++p) {
+    data.fock.At({p, p}) = data.orbital_energies.At({p});
+    for (std::size_t q = 0; q < 4; ++q) {
+      for (std::size_t r = 0; r < 4; ++r) {
+        for (std::size_t s = 0; s < 4; ++s) {
+          data.chemist_integrals.At({p, q, r, s}) =
+              0.1 / static_cast<double>(1 + p + q + r + s);
+        }
+      }
+    }
+  }
+  // Independent 4-electron determinant perturbation, including all 70
+  // determinants in the N=4 sector of eight spin orbitals.
+  const std::array<double, 3> expected{
+      -0.0010166186673625, 0.000023028437140283, -0.00000092110857427566};
+  const auto result = SolveSpatialMP(data, 4, -4.0);
+  ASSERT_EQ(result.order_energies.size(), expected.size());
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_NEAR(result.order_energies[i], expected[i], 1e-11);
+  }
+}
+
 TEST(SpatialMP2, EnergyAndResidualsMatchDenominatorFormula) {
   using Array = wickqc::NDArray<double>;
   const auto ni = wickqc::test::Dimension("WICKQC_TEST_OCCUPIED");

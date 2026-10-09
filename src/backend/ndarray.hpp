@@ -884,38 +884,20 @@ class NDArray {
     const std::size_t lhs_batch_stride = plan.m * plan.k;
     const std::size_t rhs_batch_stride = plan.n * plan.k;
     const std::size_t output_batch_stride = plan.m * plan.n;
-    std::vector<T> temporary;
-    if (beta != T{}) {
-      temporary.resize(output_batch_stride);
-    }
     for (std::size_t batch = 0; batch < plan.batches; ++batch) {
       const T* lhs_ptr = lhs_matrix.data_ + batch * lhs_batch_stride;
       const T* rhs_ptr = rhs_matrix.data_ + batch * rhs_batch_stride;
       T* output_ptr = output.data_ + batch * output_batch_stride;
-      if (beta == T{}) {
-        blas::Gemm<T>(
-            plan.m,
-            plan.n,
-            plan.k,
-            plan.n,
-            alpha,
-            lhs_ptr,
-            rhs_ptr,
-            output_ptr);
-      } else {
-        blas::Gemm<T>(
-            plan.m,
-            plan.n,
-            plan.k,
-            plan.n,
-            alpha,
-            lhs_ptr,
-            rhs_ptr,
-            temporary.data());
-        for (std::size_t i = 0; i < output_batch_stride; ++i) {
-          output_ptr[i] = temporary[i] + beta * output_ptr[i];
-        }
-      }
+      blas::Gemm<T>(
+          plan.m,
+          plan.n,
+          plan.k,
+          plan.n,
+          alpha,
+          lhs_ptr,
+          rhs_ptr,
+          output_ptr,
+          beta);
     }
 #endif
   }

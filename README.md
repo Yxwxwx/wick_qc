@@ -159,6 +159,23 @@ library is `wickqc_runtime`; generic NDArray users can link only the
 dependency. Selection is per build, and all consumers of NDArray should link
 the same interface target to inherit consistent definitions and libraries.
 
+The header-only `backend/blas.hpp` adapter is also shared with the MD integral
+module. `blas::Gemm<T>` keeps its original eight-argument `A * B.transpose()`
+interface; `Gemm<T, false>` multiplies `A * B`. Optional trailing arguments are
+`beta`, `lda`, and `ldb`, so contractions can accumulate directly into strided
+output without a temporary matrix. Complex transpose never conjugates.
+Native GEMM retains 4×4 register blocking and 4/2/1 tails using standard C++20,
+without compiler-specific pointer qualifiers or unroll pragmas. Ordinary
+products with at least eight output columns skip zero coefficients and use
+the shared eight-way contiguous `blas::Axpy`; short rows retain register
+blocking. The integral module reuses this AXPY for contraction and transforms.
+Extended
+precision uses the native kernel even with a double CBLAS provider selected.
+The CBLAS path calls only `cblas_dgemm`/`cblas_zgemm`; standalone consumers may
+define `WICKQC_USE_CBLAS` and supply a common `cblas.h`. Complex overwrite calls
+clear the active output first: the locally installed BLIS `zgemm` otherwise
+propagates NaNs from old output even with `beta=0` (reproduced at 3×4×1).
+
 ```bash
 cmake -S . -B build/openblas -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DEINSUM_BACKEND=OPENBLAS -DLAPACK_BACKEND=OPENBLAS -DOPENBLAS_ROOT=/path/to/openblas

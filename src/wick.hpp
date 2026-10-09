@@ -23,6 +23,7 @@
 #if defined(WICKQC_LAPACK_MKL) || defined(WICKQC_LAPACK_OPENBLAS) || \
     defined(WICKQC_LAPACK_NETLIB) || defined(WICKQC_LAPACK_EIGEN)
 #include "backend/lapack.hpp" // IWYU pragma: export
+#include "method/mp.hpp" // IWYU pragma: export
 #endif
 
 #if defined(WICKQC_ENABLE_AO2MO)
